@@ -99,7 +99,7 @@ mv $RPM_BUILD_ROOT/%{_datadir}/vim/vimfiles $RPM_BUILD_ROOT/%{_datadir}/vim/site
 %{_bindir}/augtool
 %{_bindir}/augparse
 %{_bindir}/fadot
-%doc COPYING
+%license COPYING
 
 %files -n %{__shrlibname}
 %defattr(-,root,root,-)
