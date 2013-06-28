@@ -7,6 +7,7 @@ Group:          System/Libraries
 Url:            http://augeas.net/
 Source0:        http://augeas.net/download/augeas-%{version}.tar.gz
 Source1:        baselibs.conf
+Source1001: 	augeas.manifest
 BuildRequires:  glib2-devel
 BuildRequires:  libxml2-devel
 BuildRequires:  readline-devel
@@ -77,6 +78,7 @@ modifying the official lenses, or when creating new ones.
 
 %prep
 %setup -q
+cp %{SOURCE1001} .
 
 %build
 export CFLAGS="-Wno-error $RPM_OPT_FLAGS"
@@ -95,6 +97,7 @@ mv $RPM_BUILD_ROOT/%{_datadir}/vim/vimfiles $RPM_BUILD_ROOT/%{_datadir}/vim/site
 
 %docs_package
 %files
+%manifest %{name}.manifest
 %defattr(-,root,root,-)
 %{_bindir}/augtool
 %{_bindir}/augparse
@@ -102,10 +105,12 @@ mv $RPM_BUILD_ROOT/%{_datadir}/vim/vimfiles $RPM_BUILD_ROOT/%{_datadir}/vim/site
 %license COPYING
 
 %files -n %{__shrlibname}
+%manifest %{name}.manifest
 %defattr(-,root,root,-)
 %{_libdir}/*.so.*
 
 %files devel
+%manifest %{name}.manifest
 %defattr(-,root,root,-)
 %{_includedir}/*
 %{_libdir}/*.so
@@ -119,6 +124,7 @@ mv $RPM_BUILD_ROOT/%{_datadir}/vim/vimfiles $RPM_BUILD_ROOT/%{_datadir}/vim/site
 %{_datadir}/vim/site/syntax/augeas.vim
 
 %files lenses
+%manifest %{name}.manifest
 %defattr(-,root,root,-)
 %dir %{_datadir}/%{name}
 %dir %{_datadir}/%{name}/lenses
@@ -126,6 +132,7 @@ mv $RPM_BUILD_ROOT/%{_datadir}/vim/vimfiles $RPM_BUILD_ROOT/%{_datadir}/vim/site
 %{_datadir}/%{name}/lenses/dist/*.aug
 
 %files lense-tests
+%manifest %{name}.manifest
 %defattr(-,root,root,-)
 %dir %{_datadir}/%{name}/lenses/dist/tests
 %{_datadir}/%{name}/lenses/dist/tests/*.aug
