@@ -2,7 +2,7 @@ Name:           augeas
 Version:        0.10.0
 Release:        0
 Summary:        A library for changing configuration files
-License:        GPL-3.0+ ; LGPL-2.1+
+License:        GPL-3.0+ or LGPL-2.1+
 Group:          System/Libraries
 Url:            http://augeas.net/
 Source0:        http://augeas.net/download/augeas-%{version}.tar.gz
@@ -26,7 +26,7 @@ file format and the transformation into a tree.
 
 %package        devel
 Summary:        A library for changing configuration files
-Group:          Development/Libraries/C and C++
+Group:          System/Development
 Requires:       %{__shrlibname} = %{version}
 
 %description    devel
@@ -41,7 +41,7 @@ file format and the transformation into a tree.
 
 %package        -n %{__shrlibname}
 Summary:        A library for changing configuration files
-Group:          Development/Libraries/C and C++
+Group:          System/Libraries
 Recommends:     %{name}-lenses = %{version}
 
 %description    -n %{__shrlibname}
@@ -56,7 +56,7 @@ file format and the transformation into a tree.
 
 %package        lenses
 Summary:        Official set of lenses for use by %{__shrlibname}
-Group:          Development/Libraries/Other
+Group:          System/Libraries
 Requires:       %{__shrlibname} = %{version}
 
 %description    lenses
@@ -69,7 +69,7 @@ set of lenses.
 
 %package        lense-tests
 Summary:        Set of tests for official Augeas lenses
-Group:          Development/Libraries/Other
+Group:          System/Testing
 Requires:       %{name}-lenses = %{version}
 
 %description    lense-tests
