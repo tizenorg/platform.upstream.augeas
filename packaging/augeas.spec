@@ -1,5 +1,5 @@
 Name:           augeas
-Version:        0.10.0
+Version:        1.3.0
 Release:        0
 Summary:        A library for changing configuration files
 License:        GPL-3.0+ or LGPL-2.1+
