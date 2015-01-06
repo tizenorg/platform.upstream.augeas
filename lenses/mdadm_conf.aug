@@ -11,7 +11,7 @@ Reference:
     config.c and policy.c from mdadm-3.2.2
 
 License:
-    This file is licensed under the LGPLv2+.
+    This file is licensed under the LGPL v2+.
 
 This is a lens for /etc/mdadm.conf. It aims to parse every valid configuration
 file as of version 3.2.2, and many invalid ones too. This last point is a
@@ -75,7 +75,7 @@ let dev_partitions_re = /partitions/i
 
 let dev_containers = [ del dev_containers_re "containers" . label "containers" ]
 let dev_partitions = [ del dev_partitions_re "partitions" . label "partitions" ]
-let dev_device = [ label "name". store ( value - dev_containers_re - dev_partitions_re) ]
+let dev_device = [ label "name". store ( value - (dev_containers_re | dev_partitions_re)) ]
 
 (* Strictly there must be at least 1 device, but we err on the side of parsing
 *)
@@ -274,5 +274,6 @@ let lns = (comment
            | part_policy )*
 
 let filter     = incl "/etc/mdadm.conf"
+               . incl "/etc/mdadm/mdadm.conf"
 
 let xfm        = transform lns filter

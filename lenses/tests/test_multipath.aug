@@ -78,12 +78,14 @@ devices {
 		hardware_handler	\"0\"
 		failback		15
 		rr_weight		priorities
+		rr_min_io_rq		75
 		no_path_retry		queue
 	}
 	device {
 		vendor			\"COMPAQ  \"
 		product			\"MSA1000         \"
 		path_grouping_policy	multibus
+		polling_interval	9
 	}
 }\n"
 
@@ -158,8 +160,10 @@ test Multipath.lns get conf =
       { "hardware_handler" = "0" }
       { "failback" = "15" }
       { "rr_weight" = "priorities" }
+      { "rr_min_io_rq" = "75" }
       { "no_path_retry" = "queue" } }
     { "device"
       { "vendor" = "COMPAQ  " }
       { "product" = "MSA1000         " }
-      { "path_grouping_policy" = "multibus" } } }
+      { "path_grouping_policy" = "multibus" }
+      { "polling_interval" = "9" } } }

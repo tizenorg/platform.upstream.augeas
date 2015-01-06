@@ -31,3 +31,17 @@ test Desktop.lns get conf =
       { "X-KDE-Library" = "libfooview" }
       { "X-KDE-FactoryName" = "fooviewfactory" }
       { "X-KDE-ServiceType" = "FooService" } }
+
+(* Entries with square brackets *)
+test Desktop.lns get "[Desktop Entry]
+X-GNOME-FullName[ca]=En canadien
+" =
+    { "Desktop Entry"
+      { "X-GNOME-FullName[ca]" = "En canadien" } }
+
+(* Test: Desktop.lns
+     Allow @ in setting (GH issue #92) *)
+test Desktop.lns get "[Desktop Entry]
+Name[sr@latin] = foobar\n" =
+    { "Desktop Entry"
+      { "Name[sr@latin]" = "foobar" } }

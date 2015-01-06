@@ -118,6 +118,8 @@ virtual_server 192.168.1.11 22 {
 
     protocol TCP 
 
+    sorry_server 10.20.40.30 22
+
     ! there can be as many real_server blocks as you need 
 
     real_server 10.20.40.10 22 { 
@@ -163,10 +165,8 @@ weight 2                        # add 2 points of prio if OK
      { "#comment" = "Configuration File for keepalived" }
      {}
      { "global_defs"
-       { }
        { "#comment" = "this is who emails will go to on alerts" }
        { "notification_email"
-            { }
             { "email" = "admins@example.com" }
             { "email" = "fakepager@example.com" }
             { "#comment" = "add a few more email addresses here if you would like" } }
@@ -182,35 +182,28 @@ weight 2                        # add 2 points of prio if OK
        { "lvs_id" = "LVS_EXAMPLE_01" } }
      {}
      { "vrrp_sync_group" = "VG1"
-       { }
        { "group"
-         { }
          { "inside_network"
            { "#comment" = "name of vrrp_instance (below)" } }
          { "outside_network"
            { "#comment" = "One for each moveable IP." } } } }
      {}
      { "vrrp_instance" = "VI_1"
-       { }
        { "state" = "MASTER" }
        { "interface" = "eth0" }
        { }
        { "track_interface"
-         { }
          { "eth0" { "#comment" = "Back" } }
          { "eth1" { "#comment" = "DMZ" } } }
        { "track_script"
-         { }
          { "check_apache2" { "#comment" = "weight = +2 si ok, 0 si nok" } } }
        { "garp_master_delay" = "5" }
        { "priority" = "50" }
        { "advert_int" = "2" }
        { "authentication"
-         { }
          { "auth_type" = "PASS" }
          { "auth_pass" = "mypass" } }
        { "virtual_ipaddress"
-         { }
          { "ipaddr" = "10.234.66.146"
            { "prefixlen" = "32" }
            { "dev" = "eth0" } } }
@@ -247,7 +240,6 @@ weight 2                        # add 2 points of prio if OK
        { "#comment" = "I don't use AH" }
        { "#comment" = "yet as many people have reported problems with it" }
        { "authentication"
-         { }
          { "auth_type" = "PASS" }
          { "auth_pass" = "example" } }
        { }
@@ -258,7 +250,6 @@ weight 2                        # add 2 points of prio if OK
        { "#comment" = "any IP addresses" }
        { }
        { "virtual_ipaddress"
-         { }
          { "ipaddr" = "192.168.1.11" }
          { "ipaddr" = "10.234.66.146"
            { "prefixlen" = "32" }
@@ -269,7 +260,6 @@ weight 2                        # add 2 points of prio if OK
        { "virtual_server"
          { "ip" = "192.168.1.11" }
          { "port" = "22" }
-         { }
          { "delay_loop" = "6" }
          { }
          { "#comment" = "use round-robin as a load balancing algorithm" }
@@ -281,13 +271,15 @@ weight 2                        # add 2 points of prio if OK
          { }
          { "protocol" = "TCP" }
          { }
+         { "sorry_server"
+           { "ip" = "10.20.40.30" }
+           { "port" = "22" } }
+         { }
          { "#comment" = "there can be as many real_server blocks as you need" }
          { }
          { "real_server"
            { "ip" = "10.20.40.10" }
            { "port" = "22" }
-           { }
-           { }
            { "#comment" = "if we used weighted round-robin or a similar lb algo," }
            { "#comment" = "we include the weight of this server" }
            { }
@@ -300,12 +292,10 @@ weight 2                        # add 2 points of prio if OK
            { "#comment" = "if it fails, we will pull this realserver out of the pool" }
            { "#comment" = "and send email about the removal" }
            { "TCP_CHECK"
-             { }
              { "connect_timeout" = "3" }
              { "connect_port" = "22" } } } }
        { }
        { "virtual_server_group" = "DNS_1"
-         { }
          { "vip"
 	   { "ipaddr" = "192.168.0.1" }
 	   { "port" = "22" } }
@@ -328,3 +318,125 @@ weight 2                        # add 2 points of prio if OK
        { }
        { "#comment" = "that's all" }
 
+(* Variable: tcp_check
+   An example of a TCP health checker *)
+let tcp_check = "virtual_server 192.168.1.11 22 {
+    real_server 10.20.40.10 22 {
+        TCP_CHECK {
+            connect_timeout 3
+            connect_port 22
+            bindto 192.168.1.1
+        }
+    }
+}
+"
+test Keepalived.lns get tcp_check =
+  { "virtual_server"
+    { "ip" = "192.168.1.11" }
+    { "port" = "22" }
+    { "real_server"
+      { "ip" = "10.20.40.10" }
+      { "port" = "22" }
+      { "TCP_CHECK"
+        { "connect_timeout" = "3" }
+        { "connect_port" = "22" }
+        { "bindto" = "192.168.1.1" } } } }
+
+(* Variable: misc_check
+   An example of a MISC health checker *)
+let misc_check = "virtual_server 192.168.1.11 22 {
+    real_server 10.20.40.10 22 {
+        MISC_CHECK {
+            misc_path /usr/local/bin/server_test
+            misc_timeout 3
+            misc_dynamic
+        }
+    }
+}
+"
+test Keepalived.lns get misc_check =
+  { "virtual_server"
+    { "ip" = "192.168.1.11" }
+    { "port" = "22" }
+    { "real_server"
+      { "ip" = "10.20.40.10" }
+      { "port" = "22" }
+      { "MISC_CHECK"
+        { "misc_path" = "/usr/local/bin/server_test" }
+        { "misc_timeout" = "3" }
+        { "misc_dynamic" } } } }
+
+(* Variable: smtp_check
+   An example of an SMTP health checker *)
+let smtp_check = "virtual_server 192.168.1.11 22 {
+    real_server 10.20.40.10 22 {
+        SMTP_CHECK {
+            host {
+              connect_ip 10.20.40.11
+              connect_port 587
+              bindto 192.168.1.1
+            }
+            connect_timeout 3
+            retry 5
+            delay_before_retry 10
+            helo_name \"Testing Augeas\"
+        }
+    }
+}
+"
+test Keepalived.lns get smtp_check =
+  { "virtual_server"
+    { "ip" = "192.168.1.11" }
+    { "port" = "22" }
+    { "real_server"
+      { "ip" = "10.20.40.10" }
+      { "port" = "22" }
+      { "SMTP_CHECK"
+        { "host"
+          { "connect_ip" = "10.20.40.11" }
+          { "connect_port" = "587" }
+          { "bindto" = "192.168.1.1" } }
+        { "connect_timeout" = "3" }
+        { "retry" = "5" }
+        { "delay_before_retry" = "10" }
+        { "helo_name" = "\"Testing Augeas\"" } } } }
+
+(* Variable: http_check
+   An example of an HTTP health checker *)
+let http_check = "virtual_server 192.168.1.11 22 {
+    real_server 10.20.40.10 22 {
+        HTTP_GET {
+            url {
+              path /mrtg2/
+              digest 9b3a0c85a887a256d6939da88aabd8cd
+              status_code 200
+            }
+            connect_timeout 3
+            connect_port 8080
+            nb_get_retry 5
+            delay_before_retry 10
+        }
+        SSL_GET {
+            connect_port 8443
+        }
+    }
+}
+"
+test Keepalived.lns get http_check =
+  { "virtual_server"
+    { "ip" = "192.168.1.11" }
+    { "port" = "22" }
+    { "real_server"
+      { "ip" = "10.20.40.10" }
+      { "port" = "22" }
+      { "HTTP_GET"
+        { "url"
+          { "path" = "/mrtg2/" }
+          { "digest" = "9b3a0c85a887a256d6939da88aabd8cd" }
+          { "status_code" = "200" } }
+        { "connect_timeout" = "3" }
+        { "connect_port" = "8080" }
+        { "nb_get_retry" = "5" }
+        { "delay_before_retry" = "10" } }
+      { "SSL_GET"
+        { "connect_port" = "8443" } } } }

@@ -1,5 +1,5 @@
 GNULIB= ../gnulib/lib/libgnu.la
-GNULIB_CFLAGS= -I $(top_srcdir)/gnulib/lib
+GNULIB_CFLAGS= -I $(top_builddir)/gnulib/lib -I $(top_srcdir)/gnulib/lib
 
 AM_CFLAGS = @AUGEAS_CFLAGS@ @WARN_CFLAGS@ $(GNULIB_CFLAGS) $(LIBXML_CFLAGS)
 
@@ -62,6 +62,6 @@ internal.h: datadir.h
 
 FORCE-datadir.h: Makefile
 	echo '#define DATADIR "$(datadir)"' > datadir.h1
-	$(top_srcdir)/build/aux/move-if-change datadir.h1 datadir.h
+	$(top_srcdir)/build/ac-aux/move-if-change datadir.h1 datadir.h
 
 datadir.h: FORCE-datadir.h

@@ -30,6 +30,8 @@
 #include <internal.h>
 #include <memory.h>
 
+#include "cutest.h"
+
 static const char *abs_top_srcdir;
 static char *root;
 
@@ -314,6 +316,21 @@ static int test_invalid_regexp(struct augeas *aug) {
     return -1;
 }
 
+static int test_wrong_regexp_flag(struct augeas *aug) {
+    int r;
+
+    printf("%-30s ... ", "wrong_regexp_flag");
+    r = aug_match(aug, "/files/*[ * =~ regexp('abc', 'o')]", NULL);
+    if (r >= 0)
+        goto fail;
+
+    printf("PASS\n");
+    return 0;
+ fail:
+    printf("FAIL\n");
+    return -1;
+}
+
 static int run_tests(struct test *tests, int argc, char **argv) {
     char *lensdir;
     struct augeas *aug = NULL;
@@ -336,11 +353,7 @@ static int run_tests(struct test *tests, int argc, char **argv) {
         die("aug_defvar $php");
 
     list_for_each(t, tests) {
-        int skip = (argc > 0);
-        for (int i=0; i < argc; i++)
-            if (STREQ(argv[i], t->name))
-                skip = 0;
-        if (skip)
+        if (! should_run(t->name, argc, argv))
             continue;
         if (run_one_test(aug, t) < 0)
             result = EXIT_FAILURE;
@@ -357,6 +370,9 @@ static int run_tests(struct test *tests, int argc, char **argv) {
             result = EXIT_FAILURE;
 
         if (test_invalid_regexp(aug) < 0)
+            result = EXIT_FAILURE;
+
+        if (test_wrong_regexp_flag(aug) < 0)
             result = EXIT_FAILURE;
     }
     aug_close(aug);

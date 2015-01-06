@@ -74,9 +74,9 @@ test Xml.decl_def_item get
    !DOCTYPE tags are mapped in "!DOCTYPE" nodes.
    The associated system attribute is mapped in a "SYSTEM" subnode. *)
 test Xml.doctype get
- "<!DOCTYPE greeting SYSTEM \"hello.dtd\">" =
+ "<!DOCTYPE greeting:foo SYSTEM \"hello.dtd\">" =
 
-  { "!DOCTYPE" = "greeting"
+  { "!DOCTYPE" = "greeting:foo"
     { "SYSTEM" = "hello.dtd" }
   }
 
@@ -184,6 +184,21 @@ test Xml.attributes get " refs=\"A1\nA2  A3\"" =
 test Xml.attributes put attr1 after rm "/#attribute[1]";
                                     set "/#attribute/attr2" "foo" = attr2
 
+(* test quoting *)
+(* well formed values *)
+test Xml.attributes get " attr1=\"value1\"" = { "#attribute" { "attr1" = "value1" } }
+test Xml.attributes get " attr1='value1'" = { "#attribute" { "attr1" = "value1" } }
+test Xml.attributes get " attr1='va\"lue1'" = { "#attribute" { "attr1" = "va\"lue1" } }
+test Xml.attributes get " attr1=\"va'lue1\"" = { "#attribute" { "attr1" = "va'lue1" } }
+
+(* illegal as per the XML standard *)
+test Xml.attributes get " attr1=\"va\"lue1\"" = *
+test Xml.attributes get " attr1='va'lue1'" = *
+
+(* malformed values *)
+test Xml.attributes get " attr1=\"value1'" = *
+test Xml.attributes get " attr1='value1\"" = *
+
 (* Group: empty *)
 
 (* Variable: empty1 *)
@@ -247,7 +262,7 @@ test Xml.lns get "<oor:component-data xmlns:oor=\"http://openoffice.org/2001/reg
 
 (* Variable: input1 *)
 let input1 = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>
-<html>
+<html>\r
     <head>
         <title>Wiki</title>
     </head>
@@ -273,7 +288,7 @@ test Xml.doc get input1 =
     }
   }
   { "html"
-    { "#text" = "\n    " }
+    { "#text" = "\r\n    " }
     { "head"
       { "#text" = "\n        " }
       { "title"
@@ -322,7 +337,7 @@ test Xml.doc get input1 =
    Modify <input1> with <Xml.doc> *)
 test Xml.doc put input1 after rm "/html/body" =
 "<?xml version=\"1.0\" encoding=\"UTF-8\"?>
-<html>
+<html>\r
     <head>
         <title>Wiki</title>
     </head>
@@ -622,7 +637,14 @@ test Xml.lns get p10pass1_1 =
     }
   }
 
-test Xml.lns get p10pass1_2 = *
+test Xml.lns get p10pass1_2 =
+  { "doc"
+    { "A" = "#empty"
+      { "#attribute"
+        { "a" = "\"\">&#39;&#34;" }
+      }
+    }
+  }
 
 (* here again, test exclude single quote *)
 let p11pass1 = "<!--Inability to resolve a notation should not be reported as an error-->
@@ -696,9 +718,9 @@ test Xml.lns get p22pass3 =
 
 let p25pass2 = "<?xml version
 
-     
+
 =
-  
+
 
 \"1.0\"?>
 <doc></doc>"
@@ -712,7 +734,7 @@ test Xml.lns get p25pass2 =
   { "doc" }
 
 
-test Xml.lns get "<!DOCTYPE 
+test Xml.lns get "<!DOCTYPE
 
 doc
 
@@ -742,6 +764,10 @@ test Xml.lns get "<a><doc att=\"val\" \natt2=\"val2\" att3=\"val3\"/></a>" =
 
 test Xml.lns get "<doc/>" = { "doc" = "#empty" }
 
+test Xml.lns get "<a><![CDATA[Thu, 13 Feb 2014 12:22:35 +0000]]></a>" =
+  { "a"
+    { "#CDATA" = "Thu, 13 Feb 2014 12:22:35 +0000" } }
+
 (* failure tests *)
 (* only one document element *)
 test Xml.lns get "<doc></doc><bad/>" = *
@@ -764,12 +790,17 @@ test Xml.lns get "<doc><![ CDATA[a]]></doc>" = *
 (* no space after "CDATA" *)
 test Xml.lns get "<doc><![CDATA [a]]></doc>" = *
 
-(* CDSect's can't nest *)
+(* FIXME: CDSect's can't nest *)
 test Xml.lns get "<doc>
 <![CDATA[
 <![CDATA[XML doesn't allow CDATA sections to nest]]>
 ]]>
-</doc>" = *
+</doc>" =
+  { "doc"
+    { "#text" = "\n" }
+    { "#CDATA" = "\n<![CDATA[XML doesn't allow CDATA sections to nest" }
+    { "#text" = "\n]]" }
+    { "#text" = ">\n" } }
 
 (* Comment is illegal in VersionInfo *)
 test Xml.lns get "<?xml version <!--bad comment--> =\"1.0\"?>
@@ -788,3 +819,7 @@ test Xml.lns get "<!DOCTYPE doc [
 ]>
 <doc></doc>" = *
 
+(* Escape character in attributes *)
+test Xml.lns get "<a password=\"my\!pass\" />" =
+  { "a" = "#empty"
+    { "#attribute" { "password" = "my\!pass" } } }

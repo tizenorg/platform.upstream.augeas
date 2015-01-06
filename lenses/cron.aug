@@ -9,7 +9,7 @@ About: Reference
  possible.
 
 About: License
-  This file is licensed under the LGPLv2+, like the rest of Augeas.
+  This file is licensed under the LGPL v2+, like the rest of Augeas.
 
 About: Lens Usage
   Sample usage of this lens in augtool
@@ -51,6 +51,8 @@ let alpha      = /[A-Za-z]{3}/
 (* Variable: alphanum *)
 let alphanum   = (num|alpha) . ("-" . (num|alpha))?
 
+(* Variable: entry_prefix *)
+let entry_prefix = /-/
 
 (* Group: Separators *)
 
@@ -73,10 +75,12 @@ let sep_eq  = Util.del_str "="
  *************************************************************************)
 
 let shellvar =
-  let key_re = Shellvars.key_re - "entry" in
+  let key_re = /[A-Za-z-1-9_]+(\[[0-9]+\])?/ - "entry" in
   let sto_to_eol = store /[^\n]*[^ \t\n]/ in
   [ key key_re . sep_eq . sto_to_eol . eol ]
 
+(* View: - prefix of an entry *)
+let prefix     = [ label "prefix"       . store entry_prefix ]
 
 (* View: minute *)
 let minute     = [ label "minute"       . store num ]
@@ -124,6 +128,7 @@ let schedule    = [ label "schedule" . Util.del_str "@"
  *************************************************************************)
 
 let entry       = [ label "entry" . indent
+                   . prefix?
                    . ( time | schedule )
                    . sep_spc . user
                    . sep_spc . store Rx.space_in . eol ]
@@ -140,6 +145,10 @@ let lns = ( empty | comment | shellvar | entry )*
 let filter =
   incl "/etc/cron.d/*" .
   incl "/etc/crontab" .
+  excl "/etc/cron.d/at.allow" .
+  excl "/etc/cron.d/at.deny" .
+  excl "/etc/cron.d/cron.allow" .
+  excl "/etc/cron.d/cron.deny" .
   Util.stdexcl
 
 let xfm = transform lns filter

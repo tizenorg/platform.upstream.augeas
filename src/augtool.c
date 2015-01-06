@@ -44,8 +44,10 @@ static const char *const progname = "augtool";
 static unsigned int flags = AUG_NONE;
 const char *root = NULL;
 char *loadpath = NULL;
+char *transforms = NULL;
+size_t transformslen = 0;
 const char *inputfile = NULL;
-int echo = 0;         /* Gets also changed in main_loop */
+int echo_commands = 0;         /* Gets also changed in main_loop */
 bool print_version = false;
 bool auto_save = false;
 bool interactive = false;
@@ -166,9 +168,10 @@ static char *readline_command_generator(const char *text, int state) {
     // FIXME: expose somewhere under /augeas
     static const char *const commands[] = {
         "quit", "clear", "defnode", "defvar",
-        "get", "ins", "load", "ls", "match",
-        "mv", "print", "dump-xml", "rm", "save", "set", "setm",
-        "clearm", "span", "help", NULL };
+        "get", "label", "ins", "load", "ls", "match",
+        "mv", "cp", "rename", "print", "dump-xml", "rm", "save", "set", "setm",
+        "clearm", "span", "store", "retrieve", "transform",
+        "help", "touch", "insert", "move", "copy", NULL };
 
     static int current = 0;
     const char *name;
@@ -266,22 +269,26 @@ static void usage(void) {
     fprintf(stderr, "Run '%s help' to get a list of possible commands.\n",
             progname);
     fprintf(stderr, "\nOptions:\n\n");
-    fprintf(stderr, "  -c, --typecheck    typecheck lenses\n");
-    fprintf(stderr, "  -b, --backup       preserve originals of modified files with\n"
-                    "                     extension '.augsave'\n");
-    fprintf(stderr, "  -n, --new          save changes in files with extension '.augnew',\n"
-                    "                     leave original unchanged\n");
-    fprintf(stderr, "  -r, --root ROOT    use ROOT as the root of the filesystem\n");
-    fprintf(stderr, "  -I, --include DIR  search DIR for modules; can be given mutiple times\n");
-    fprintf(stderr, "  -e, --echo         echo commands when reading from a file\n");
-    fprintf(stderr, "  -f, --file FILE    read commands from FILE\n");
-    fprintf(stderr, "  -s, --autosave     automatically save at the end of instructions\n");
-    fprintf(stderr, "  -i, --interactive  run an interactive shell after evaluating the commands in STDIN and FILE\n");
-    fprintf(stderr, "  -S, --nostdinc     do not search the builtin default directories for modules\n");
-    fprintf(stderr, "  -L, --noload       do not load any files into the tree on startup\n");
-    fprintf(stderr, "  -A, --noautoload   do not autoload modules from the search path\n");
-    fprintf(stderr, "  --span             load span positions for nodes related to a file\n");
-    fprintf(stderr, "  --version          print version information and exit.\n");
+    fprintf(stderr, "  -c, --typecheck      typecheck lenses\n");
+    fprintf(stderr, "  -b, --backup         preserve originals of modified files with\n"
+                    "                       extension '.augsave'\n");
+    fprintf(stderr, "  -n, --new            save changes in files with extension '.augnew',\n"
+                    "                       leave original unchanged\n");
+    fprintf(stderr, "  -r, --root ROOT      use ROOT as the root of the filesystem\n");
+    fprintf(stderr, "  -I, --include DIR    search DIR for modules; can be given multiple times\n");
+    fprintf(stderr, "  -t, --transform XFM  add a file transform; uses the 'transform' command\n"
+                    "                       syntax, e.g. -t 'Fstab incl /etc/fstab.bak'\n");
+    fprintf(stderr, "  -e, --echo           echo commands when reading from a file\n");
+    fprintf(stderr, "  -f, --file FILE      read commands from FILE\n");
+    fprintf(stderr, "  -s, --autosave       automatically save at the end of instructions\n");
+    fprintf(stderr, "  -i, --interactive    run an interactive shell after evaluating\n"
+                    "                       the commands in STDIN and FILE\n");
+    fprintf(stderr, "  -S, --nostdinc       do not search the builtin default directories\n"
+                    "                       for modules\n");
+    fprintf(stderr, "  -L, --noload         do not load any files into the tree on startup\n");
+    fprintf(stderr, "  -A, --noautoload     do not autoload modules from the search path\n");
+    fprintf(stderr, "  --span               load span positions for nodes related to a file\n");
+    fprintf(stderr, "  --version            print version information and exit.\n");
 
     exit(EXIT_FAILURE);
 }
@@ -294,26 +301,27 @@ static void parse_opts(int argc, char **argv) {
         VAL_SPAN = VAL_VERSION + 1
     };
     struct option options[] = {
-        { "help",      0, 0, 'h' },
-        { "typecheck", 0, 0, 'c' },
-        { "backup",    0, 0, 'b' },
-        { "new",       0, 0, 'n' },
-        { "root",      1, 0, 'r' },
-        { "include",   1, 0, 'I' },
-        { "echo",      0, 0, 'e' },
-        { "file",      1, 0, 'f' },
-        { "autosave",  0, 0, 's' },
-        { "interactive",  0, 0, 'i' },
-        { "nostdinc",  0, 0, 'S' },
-        { "noload",    0, 0, 'L' },
-        { "noautoload", 0, 0, 'A' },
-        { "span",      0, 0, VAL_SPAN },
-        { "version",   0, 0, VAL_VERSION },
+        { "help",        0, 0, 'h' },
+        { "typecheck",   0, 0, 'c' },
+        { "backup",      0, 0, 'b' },
+        { "new",         0, 0, 'n' },
+        { "root",        1, 0, 'r' },
+        { "include",     1, 0, 'I' },
+        { "transform",   1, 0, 't' },
+        { "echo",        0, 0, 'e' },
+        { "file",        1, 0, 'f' },
+        { "autosave",    0, 0, 's' },
+        { "interactive", 0, 0, 'i' },
+        { "nostdinc",    0, 0, 'S' },
+        { "noload",      0, 0, 'L' },
+        { "noautoload",  0, 0, 'A' },
+        { "span",        0, 0, VAL_SPAN },
+        { "version",     0, 0, VAL_VERSION },
         { 0, 0, 0, 0}
     };
     int idx;
 
-    while ((opt = getopt_long(argc, argv, "hnbcr:I:ef:siSLA", options, &idx)) != -1) {
+    while ((opt = getopt_long(argc, argv, "hnbcr:I:t:ef:siSLA", options, &idx)) != -1) {
         switch(opt) {
         case 'c':
             flags |= AUG_TYPE_CHECK;
@@ -333,8 +341,11 @@ static void parse_opts(int argc, char **argv) {
         case 'I':
             argz_add(&loadpath, &loadpathlen, optarg);
             break;
+        case 't':
+            argz_add(&transforms, &transformslen, optarg);
+            break;
         case 'e':
-            echo = 1;
+            echo_commands = 1;
             break;
         case 'f':
             inputfile = optarg;
@@ -423,8 +434,6 @@ static int main_loop(void) {
     bool end_reached = false;
     bool get_line = true;
     bool in_interactive = false;
-    // make readline silent by default
-    rl_outstream = fopen("/dev/null", "w");
 
     if (inputfile) {
         if (freopen(inputfile, "r", stdin) == NULL) {
@@ -437,10 +446,12 @@ static int main_loop(void) {
         }
     }
 
-    echo = echo || isatty(fileno(stdin));
-
-    if (echo)
+    // make readline silent by default
+    echo_commands = echo_commands || isatty(fileno(stdin));
+    if (echo_commands)
         rl_outstream = NULL;
+    else
+        rl_outstream = fopen("/dev/null", "w");
 
     while(1) {
         if (get_line) {
@@ -451,28 +462,37 @@ static int main_loop(void) {
 
         if (line == NULL) {
             if (!isatty(fileno(stdin)) && interactive && !in_interactive) {
-               in_interactive = true;
-               echo = true;
-               // reopen in and out streams
-               if ((rl_instream = fopen("/dev/tty", "r")) == NULL) {
-                   perror("Failed to open terminal for reading");
-                   return -1;
-               }
-               if (rl_outstream != NULL) {
-                   fclose(rl_outstream);
-                   rl_outstream = NULL;
-               }
-               if ((rl_outstream = fopen("/dev/stdout", "w")) == NULL) {
-                   perror("Failed to reopen stdout");
-                   return -1;
-               }
-               continue;
+                in_interactive = true;
+                if (echo_commands)
+                    printf("\n");
+                echo_commands = true;
+
+                // reopen in stream
+                if ((rl_instream = fopen("/dev/tty", "r")) == NULL) {
+                    perror("Failed to open terminal for reading");
+                    return -1;
+                }
+
+                // reopen stdout and stream to a tty if originally silenced or
+                // not connected to a tty, for full interactive mode
+                if (rl_outstream == NULL || !isatty(fileno(rl_outstream))) {
+                    if (rl_outstream != NULL) {
+                        fclose(rl_outstream);
+                        rl_outstream = NULL;
+                    }
+                    if (freopen("/dev/tty", "w", stdout) == NULL) {
+                        perror("Failed to reopen stdout");
+                        return -1;
+                    }
+                    rl_outstream = stdout;
+                }
+                continue;
             }
 
             if (auto_save) {
                 strncpy(inputline, "save", sizeof(inputline));
                 line = inputline;
-                if (echo)
+                if (echo_commands)
                     printf("%s\n", line);
                 auto_save = false;
             } else {
@@ -482,21 +502,29 @@ static int main_loop(void) {
         }
 
         if (end_reached) {
-            if (echo)
+            if (echo_commands)
                 printf("\n");
             return ret;
         }
 
-        if (*line == '\0' || *line == '#')
+        if (*line == '\0' || *line == '#') {
+            free(line);
             continue;
+        }
 
         code = run_command(line);
-        if (code == -2)
+        if (code == -2) {
+            free(line);
             return ret;
+        }
+
         if (code < 0) {
             ret = -1;
             print_aug_error();
         }
+
+        if (line != inputline)
+            free(line);
     }
 }
 
@@ -513,11 +541,46 @@ static int run_args(int argc, char **argv) {
         strcat(line, argv[i]);
         strcat(line, " ");
     }
+    if (echo_commands)
+        printf("%s%s\n", AUGTOOL_PROMPT, line);
     code = run_command(line);
     free(line);
     if (code >= 0 && auto_save)
+        if (echo_commands)
+            printf("%ssave\n", AUGTOOL_PROMPT);
         code = run_command("save");
-    return (code == 0 || code == -2) ? 0 : -1;
+
+    if (code < 0) {
+        code = -1;
+        print_aug_error();
+    }
+    return (code >= 0 || code == -2) ? 0 : -1;
+}
+
+static void add_transforms(char *ts, size_t tslen) {
+    char *command;
+    int r;
+    char *t = NULL;
+    bool added_transform = false;
+
+    while ((t = argz_next(ts, tslen, t))) {
+        r = xasprintf(&command, "transform %s", t);
+        if (r < 0)
+            fprintf(stderr, "error: Failed to add transform %s: could not allocate memory\n", t);
+
+        r = aug_srun(aug, stdout, command);
+        if (r < 0)
+            fprintf(stderr, "error: Failed to add transform %s: %s\n", t, aug_error_message(aug));
+
+        free(command);
+        added_transform = true;
+    }
+
+    if (added_transform) {
+        r = aug_load(aug);
+        if (r < 0)
+            fprintf(stderr, "error: Failed to load with new transforms: %s\n", aug_error_message(aug));
+    }
 }
 
 int main(int argc, char **argv) {
@@ -534,6 +597,7 @@ int main(int argc, char **argv) {
             print_aug_error();
         exit(EXIT_FAILURE);
     }
+    add_transforms(transforms, transformslen);
     if (print_version) {
         print_version_info();
         return EXIT_SUCCESS;

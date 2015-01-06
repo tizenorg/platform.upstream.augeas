@@ -8,7 +8,7 @@ About: Reference
   This lens tries to keep as close as possible to `man resolv.conf` where possible.
 
 About: Licence
-  This file is licensed under the LGPLv2+, like the rest of Augeas.
+  This file is licensed under the LGPL v2+, like the rest of Augeas.
 
 About: Lens Usage
 
@@ -71,6 +71,26 @@ let sortlist = Build.key_value_line_comment
                            Sep.space) 
                     comment_eol
 
+(* View: lookup *)
+let lookup =
+  let lookup_entry = Build.flag("bind"|"file"|"yp")
+    in Build.key_value_line_comment
+             "lookup" Sep.space
+             (Build.opt_list
+                    lookup_entry
+                    Sep.space)
+             comment_eol
+
+(* View: family *)
+let family =
+  let family_entry = Build.flag("inet4"|"inet6")
+    in Build.key_value_line_comment
+             "family" Sep.space
+             (Build.opt_list
+                    family_entry
+                    Sep.space)
+             comment_eol
+
 (************************************************************************
  * Group:                 SPECIAL OPTIONS
  *************************************************************************)
@@ -87,7 +107,8 @@ let options =
       let options_entry = Build.key_value ("ndots"|"timeout"|"attempts") 
                                           (Util.del_str ":") (store Rx.integer)
                         | Build.flag ("debug"|"rotate"|"no-check-names"
-                                     |"inet6"|"ip6-bytestring"|"edns0")
+                                     |"inet6"|"ip6-bytestring"|"edns0"
+				     |"single-request-reopen")
                         | ip6_dotint
 
             in Build.key_value_line_comment
@@ -103,13 +124,14 @@ let entry = nameserver
           | search
           | sortlist
           | options
+          | lookup
+          | family
 
 (* View: lns *)
 let lns = ( empty | comment | entry )*
 
 (* Variable: filter *)
 let filter = (incl "/etc/resolv.conf")
-    . Util.stdexcl
 
 let xfm = transform lns filter
 

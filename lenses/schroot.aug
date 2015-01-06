@@ -8,7 +8,7 @@ About: Reference
   This lens tries to keep as close as possible to `man 5 schroot.conf` where possible.
 
 About: License
-   This file is licenced under the LGPLv2+, like the rest of Augeas.
+   This file is licenced under the LGPL v2+, like the rest of Augeas.
 
 About: Lens Usage
    To be documented
@@ -42,9 +42,9 @@ let sep        = IniFile.sep "=" "="
 (* View: description
    Descriptions are special entries, which can have an optional lang parameter *)
 let description =
-   let lang = [ Util.del_str "[" . label "lang"
-              . store IniFile.entry_re . Util.del_str "]" ] in
-   [ key "description" . lang? . sep . IniFile.sto_to_comment? . (comment|IniFile.eol) ]
+     let lang = [ Util.del_str "[" . label "lang"
+                . store IniFile.entry_re . Util.del_str "]" ]
+  in IniFile.entry_generic_nocomment (key "description" . lang?) sep "#" comment
 
 (* View: entry
    An <IniFile.entry>, or <description> *)
@@ -65,6 +65,5 @@ let lns    = IniFile.lns record comment
 
 (* View: filter *)
 let filter = (incl "/etc/schroot/schroot.conf")
-             . Util.stdexcl
 
 let xfm = transform lns filter

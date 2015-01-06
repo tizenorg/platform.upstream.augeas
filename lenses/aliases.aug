@@ -8,7 +8,7 @@ About: Reference
   This lens tries to keep as close as possible to `man 5 aliases` where possible.
 
 About: License
-   This file is licenced under the LGPLv2+, like the rest of Augeas.
+   This file is licenced under the LGPL v2+, like the rest of Augeas.
 
 About: Lens Usage
    See <lns>.
@@ -38,7 +38,7 @@ module Aliases =
     * a command can contain spaces, if enclosed in double quotes, the case
     * without spaces is taken care with <word>
     *)
-   let command = /\|([^", \t\n]+|"[^"\n]+")/
+   let command = /(\|([^", \t\n]+|"[^"\n]+"))|("\|[^"\n]+")/
 
    (* Group: Comments and empty lines *)
 
@@ -53,7 +53,7 @@ module Aliases =
    (* View: colon
     * Separation between the alias and it's destinations
     *)
-   let colon = del /[ \t]*:[ \t]+/ ":\t"
+   let colon = del /[ \t]*:[ \t]*/ ":\t"
    (* View: comma
     * Separation between multiple destinations
     *)

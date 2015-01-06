@@ -60,13 +60,12 @@ typedef void (*cmd_handler)(struct command*);
 
 struct command_def {
     const char                   *name;
+    const char                   *category;
     const struct command_opt_def *opts;
     cmd_handler                   handler;
     const char                   *synopsis;
     const char                   *help;
 };
-
-static const struct command_def const *commands[];
 
 static const struct command_def cmd_def_last =
     { .name = NULL, .opts = NULL, .handler = NULL,
@@ -78,13 +77,15 @@ struct command_opt {
     char                         *value;
 };
 
-static const struct command_def *lookup_cmd_def(const char *name) {
-    for (int i = 0; commands[i]->name != NULL; i++) {
-        if (STREQ(name, commands[i]->name))
-            return commands[i];
-    }
-    return NULL;
-}
+struct command_grp_def {
+    const char                     *name;
+    const struct command_def const *commands[];
+};
+
+static const struct command_grp_def cmd_grp_def_last =
+    { .name = NULL, .commands = { } };
+
+static const struct command_def *lookup_cmd_def(const char *name);
 
 static const struct command_opt_def *
 find_def(const struct command *cmd, const char *name) {
@@ -120,30 +121,38 @@ static char *nexttoken(struct command *cmd, char **line, bool path) {
     char quot = '\0';
     int nbracket = 0;
     int nescaped = 0;
+    bool copy;
 
     s = *line;
 
     while (*s && isblank(*s)) s+= 1;
-    if (*s == '\'' || *s == '"') {
-        quot = *s;
-        s += 1;
-    }
     r = s;
     w = s;
     while (*s) {
+        copy = true;
         if (*s == '\\') {
             switch (*(s+1)) {
                 case '[':
                 case ']':  /* pass both literally */
                     nescaped = 2;
                     break;
+                case 't':  /* insert tab */
+                    *(s+1) = '\t';
+                    nescaped = 1;
+                    s += 1;
+                    break;
+                case 'n':  /* insert newline */
+                    *(s+1) = '\n';
+                    nescaped = 1;
+                    s += 1;
+                    break;
                 case ' ':
-                case '\t':
+                case '\t': /* pass both through if quoted, else fall */
                     if (quot) break;
                 case '\'':
-                case '"':
+                case '"':  /* pass both through if opposite quote, else fall */
                     if (quot && quot != *(s+1)) break;
-                case '\\':
+                case '\\': /* pass next character through */
                     nescaped = 1;
                     s += 1;
                     break;
@@ -160,19 +169,35 @@ static char *nexttoken(struct command *cmd, char **line, bool path) {
                 ERR_REPORT(cmd, AUG_ECMDRUN, "unmatched [");
                 return NULL;
             }
-            if ((quot && *s == quot)
-                || (!quot && isblank(*s) && (!path || nbracket == 0)))
-                break;
+
+            if (!path || nbracket == 0) {
+                if (!quot && (*s == '\'' || *s == '"')) {
+                    quot = *s;
+                    copy = false;
+                } else if (quot && *s == quot) {
+                    quot = '\0';
+                    copy = false;
+                }
+
+                if (!quot && isblank(*s))
+                    break;
+            }
         } else {
             nescaped -= 1;
         }
 
-        *w = *s;
+        if (copy) {
+            *w = *s;
+            w += 1;
+        }
         s += 1;
-        w += 1;
     }
     if (*s == '\0' && path && nbracket > 0) {
         ERR_REPORT(cmd, AUG_ECMDRUN, "unmatched [");
+        return NULL;
+    }
+    if (*s == '\0' && quot) {
+        ERR_REPORT(cmd, AUG_ECMDRUN, "unmatched %c", quot);
         return NULL;
     }
     while (*w && w <= s)
@@ -210,8 +235,6 @@ static int parseline(struct command *cmd, char *line) {
     char *tok;
     int narg = 0, nopt = 0;
     const struct command_opt_def *def;
-
-    free_command_opts(cmd);
 
     tok = nexttoken(cmd, &line, false);
     if (tok == NULL)
@@ -295,51 +318,7 @@ static void format_defname(char *buf, const struct command_opt_def *def,
     *p = '\0';
 }
 
-static void cmd_help(struct command *cmd) {
-    const char *name = arg_value(cmd, "command");
-    char buf[100];
-
-    if (name == NULL) {
-        fprintf(cmd->out, "Commands:\n\n");
-        for (int i=0; commands[i]->name != NULL; i++) {
-            const struct command_def *def = commands[i];
-            fprintf(cmd->out, "    %-10s - %s\n", def->name, def->synopsis);
-        }
-        fprintf(cmd->out,
-           "\nType 'help <command>' for more information on a command\n\n");
-    } else {
-        const struct command_def *def = lookup_cmd_def(name);
-        const struct command_opt_def *odef = NULL;
-
-        ERR_THROW(def == NULL, cmd->aug, AUG_ECMDRUN,
-                  "unknown command %s\n", name);
-        fprintf(cmd->out, "  COMMAND\n");
-        fprintf(cmd->out, "    %s - %s\n\n", name, def->synopsis);
-        fprintf(cmd->out, "  SYNOPSIS\n");
-        fprintf(cmd->out, "    %s", name);
-
-        for (odef = def->opts; odef->name != NULL; odef++) {
-            format_defname(buf, odef, true);
-            fprintf(cmd->out, "%s", buf);
-        }
-        fprintf(cmd->out, "\n\n");
-        fprintf(cmd->out, "  DESCRIPTION\n");
-        format_desc(def->help);
-        if (def->opts->name != NULL) {
-            fprintf(cmd->out, "  OPTIONS\n");
-            for (odef = def->opts; odef->name != NULL; odef++) {
-                const char *help = odef->help;
-                if (help == NULL)
-                    help = "";
-                format_defname(buf, odef, false);
-                fprintf(cmd->out, "    %-10s %s\n", buf, help);
-            }
-        }
-        fprintf(cmd->out, "\n");
-    }
- error:
-    return;
-}
+static void cmd_help(struct command *cmd);
 
 static const struct command_opt_def cmd_help_opts[] = {
     { .type = CMD_STR, .name = "command", .optional = true,
@@ -558,6 +537,80 @@ static const struct command_def cmd_move_def = {
     .help = cmd_mv_help
 };
 
+static void cmd_cp(struct command *cmd) {
+    const char *src = arg_value(cmd, "src");
+    const char *dst = arg_value(cmd, "dst");
+    int r;
+
+    r = aug_cp(cmd->aug, src, dst);
+    if (r < 0)
+        ERR_REPORT(cmd, AUG_ECMDRUN,
+                   "Copying %s to %s failed", src, dst);
+}
+
+static const struct command_opt_def cmd_cp_opts[] = {
+    { .type = CMD_PATH, .name = "src", .optional = false,
+      .help = "the tree to copy" },
+    { .type = CMD_PATH, .name = "dst", .optional = false,
+      .help = "where to copy the source tree" },
+    CMD_OPT_DEF_LAST
+};
+
+static const char const cmd_cp_help[] =
+    "Copy node  SRC to DST.  SRC must match  exactly one node in  "
+    "the tree.\n DST  must either  match  exactly one  node  in the  tree,  "
+    "or may  not\n exist  yet. If  DST exists  already, it  and all  its  "
+    "descendants are\n deleted.  If  DST  does  not   exist  yet,  it  and  "
+    "all  its  missing\n ancestors are created.";
+
+static const struct command_def cmd_cp_def = {
+    .name = "cp",
+    .opts = cmd_cp_opts,
+    .handler = cmd_cp,
+    .synopsis = "copy a subtree",
+    .help = cmd_cp_help
+};
+
+static const struct command_def cmd_copy_def = {
+    .name = "copy",
+    .opts = cmd_cp_opts,
+    .handler = cmd_cp,
+    .synopsis = "copy a subtree (alias of 'cp')",
+    .help = cmd_cp_help
+};
+
+static void cmd_rename(struct command *cmd) {
+    const char *src = arg_value(cmd, "src");
+    const char *lbl = arg_value(cmd, "lbl");
+    int cnt;
+
+    cnt = aug_rename(cmd->aug, src, lbl);
+    if (cnt < 0)
+        ERR_REPORT(cmd, AUG_ECMDRUN,
+                   "Renaming %s to %s failed", src, lbl);
+    if (! HAS_ERR(cmd))
+        fprintf(cmd->out, "rename : %s to %s %d\n", src, lbl, cnt);
+}
+
+static const struct command_opt_def cmd_rename_opts[] = {
+    { .type = CMD_PATH, .name = "src", .optional = false,
+      .help = "the tree to rename" },
+    { .type = CMD_STR, .name = "lbl", .optional = false,
+      .help = "the new label" },
+    CMD_OPT_DEF_LAST
+};
+
+static const char const cmd_rename_help[] =
+    "Rename the label of all nodes matching SRC to LBL.";
+
+static const struct command_def cmd_rename_def = {
+    .name = "rename",
+    .opts = cmd_rename_opts,
+    .handler = cmd_rename,
+    .synopsis = "rename a subtree label",
+    .help = cmd_rename_help
+};
+
 static void cmd_set(struct command *cmd) {
     const char *path = arg_value(cmd, "path");
     const char *val = arg_value(cmd, "value");
@@ -571,7 +624,7 @@ static void cmd_set(struct command *cmd) {
 static const struct command_opt_def cmd_set_opts[] = {
     { .type = CMD_PATH, .name = "path", .optional = false,
       .help = "set the value of this node" },
-    { .type = CMD_STR, .name = "value", .optional = false,
+    { .type = CMD_STR, .name = "value", .optional = true,
       .help = "the new value for the node" },
     CMD_OPT_DEF_LAST
 };
@@ -599,7 +652,7 @@ static const struct command_opt_def cmd_setm_opts[] = {
       .help = "the base node" },
     { .type = CMD_PATH, .name = "sub", .optional = false,
       .help = "the subtree relative to the base" },
-    { .type = CMD_STR, .name = "value", .optional = false,
+    { .type = CMD_STR, .name = "value", .optional = true,
       .help = "the value for the nodes" },
     CMD_OPT_DEF_LAST
 };
@@ -685,7 +738,7 @@ static const struct command_def cmd_span_def = {
     .name = "span",
     .opts = cmd_span_opts,
     .handler = cmd_span,
-    .synopsis = "Print information get the filename, label and value position in the text of this node",
+    .synopsis = "print position in input file corresponding to tree",
     .help = "Print the name of the file from which the node PATH was generated, as\n well as information about the positions in the file  corresponding to\n the label, the value, and the  entire  node. PATH must match  exactly\n one node.\n\n You need to run 'set /augeas/span enable' prior to  loading files to\n enable recording of span information. It is disabled by default."
 };
 
@@ -720,8 +773,7 @@ static void cmd_defnode(struct command *cmd) {
     const char *path = arg_value(cmd, "expr");
     const char *value = arg_value(cmd, "value");
 
-    /* Our simple minded line parser treats non-existant and empty values
-     * the same. We choose to take the empty string to mean NULL */
+    /* Make 'defnode foo ""' mean the same as 'defnode foo' */
     if (value != NULL && strlen(value) == 0)
         value = NULL;
     aug_defnode(cmd->aug, name, path, value, NULL);
@@ -742,7 +794,7 @@ static const struct command_def cmd_defnode_def = {
     .opts = cmd_defnode_opts,
     .handler = cmd_defnode,
     .synopsis = "set a variable, possibly creating a new node",
-    .help = "Define the variable NAME to the result of evalutating EXPR, "
+    .help = "Define the variable NAME to the result of evaluating EXPR, "
     " which must\n be a nodeset.  If no node matching EXPR exists yet,  one "
     "is created and\n NAME will refer to it.   When a node is created and "
     "VALUE is given, the\n new node's value is set to VALUE."
@@ -771,6 +823,34 @@ static const struct command_def cmd_clear_def = {
     .help = "Set the value for PATH to NULL. If PATH is not in the tree yet, "
     "it and\n all its ancestors will be created.  These new tree entries "
     "will appear\n last amongst their siblings"
+};
+
+static void cmd_touch(struct command *cmd) {
+    const char *path = arg_value(cmd, "path");
+    int r;
+
+    r = aug_match(cmd->aug, path, NULL);
+    if (r == 0) {
+        r = aug_set(cmd->aug, path, NULL);
+        if (r < 0)
+            ERR_REPORT(cmd, AUG_ECMDRUN, "Touching %s failed", path);
+    }
+}
+
+static const struct command_opt_def cmd_touch_opts[] = {
+    { .type = CMD_PATH, .name = "path", .optional = false,
+      .help = "touch this node" },
+    CMD_OPT_DEF_LAST
+};
+
+static const struct command_def cmd_touch_def = {
+    .name = "touch",
+    .opts = cmd_touch_opts,
+    .handler = cmd_touch,
+    .synopsis = "create a new node",
+    .help = "Create PATH with the value NULL if it is not in the tree yet.  "
+    "All its\n ancestors will also be created.  These new tree entries will "
+    "appear\n last amongst their siblings."
 };
 
 static void cmd_get(struct command *cmd) {
@@ -804,6 +884,37 @@ static const struct command_def cmd_get_def = {
     .help = "Get and print the value associated with PATH"
 };
 
+static void cmd_label(struct command *cmd) {
+    const char *path = arg_value(cmd, "path");
+    const char *lbl;
+    int r;
+
+    r = aug_label(cmd->aug, path, &lbl);
+    ERR_RET(cmd);
+    fprintf(cmd->out, "%s", path);
+    if (r == 0) {
+        fprintf(cmd->out, " (o)\n");
+    } else if (lbl == NULL) {
+        fprintf(cmd->out, " (none)\n");
+    } else {
+        fprintf(cmd->out, " = %s\n", lbl);
+    }
+}
+
+static const struct command_opt_def cmd_label_opts[] = {
+    { .type = CMD_PATH, .name = "path", .optional = false,
+      .help = "get the label of this node" },
+    CMD_OPT_DEF_LAST
+};
+
+static const struct command_def cmd_label_def = {
+    .name = "label",
+    .opts = cmd_label_opts,
+    .handler = cmd_label,
+    .synopsis = "get the label of a node",
+    .help = "Get and print the label associated with PATH"
+};
+
 static void cmd_print(struct command *cmd) {
     const char *path = arg_value(cmd, "path");
 
@@ -826,21 +937,16 @@ static const struct command_def cmd_print_def = {
 
 static void cmd_dump_xml(struct command *cmd) {
     const char *path = arg_value(cmd, "path");
-    const char *filename = arg_value(cmd, "filename");
     xmlNodePtr xmldoc;
     int r;
 
     r = aug_to_xml(cmd->aug, path, &xmldoc, 0);
     if (r < 0)
         ERR_REPORT(cmd, AUG_ECMDRUN,
-                   "XML export of path %s to file %s failed", path, filename);
+                   "XML export of path %s failed", path);
 
     xmlElemDump(stdout, NULL, xmldoc);
     printf("\n");
-
-    if (filename != NULL) {
-        printf("Saving to %s\n", filename);
-    }
 
     xmlFreeNode(xmldoc);
 }
@@ -848,8 +954,6 @@ static void cmd_dump_xml(struct command *cmd) {
 static const struct command_opt_def cmd_dump_xml_opts[] = {
     { .type = CMD_PATH, .name = "path", .optional = true,
       .help = "print this subtree" },
-    { .type = CMD_NONE, .name = "filename", .optional = true,
-      .help = "save to this file" },
     CMD_OPT_DEF_LAST
 };
 
@@ -858,7 +962,52 @@ static const struct command_def cmd_dump_xml_def = {
     .opts = cmd_dump_xml_opts,
     .handler = cmd_dump_xml,
     .synopsis = "print a subtree as XML",
-    .help = "Export entries in the tree as XML. If PATH is given, printing starts there,\n otherwise the whole tree is printed. If FILENAME is given, the XML is saved\n to the given file."
+    .help = "Export entries in the tree as XML. If PATH is given, printing starts there,\n otherwise the whole tree is printed."
+};
+
+static void cmd_transform(struct command *cmd) {
+    const char *lens = arg_value(cmd, "lens");
+    const char *filter = arg_value(cmd, "filter");
+    const char *file = arg_value(cmd, "file");
+    int r, excl = 0;
+
+    if (STREQ("excl", filter))
+        excl = 1;
+    else if (STREQ("incl", filter))
+        excl = 0;
+    else
+        ERR_REPORT(cmd, AUG_ECMDRUN,
+                   "FILTER must be \"incl\" or \"excl\"");
+
+    r = aug_transform(cmd->aug, lens, file, excl);
+    if (r < 0)
+        ERR_REPORT(cmd, AUG_ECMDRUN,
+                   "Adding transform for %s on lens %s failed", lens, file);
+}
+
+static const struct command_opt_def cmd_transform_opts[] = {
+    { .type = CMD_PATH, .name = "lens", .optional = false,
+      .help = "the lens to use" },
+    { .type = CMD_PATH, .name = "filter", .optional = false,
+      .help = "the type of filter, either \"incl\" or \"excl\"" },
+    { .type = CMD_PATH, .name = "file", .optional = false,
+      .help = "the file to associate to the lens" },
+    CMD_OPT_DEF_LAST
+};
+
+static const char const cmd_transform_help[] =
+    "Add a transform for FILE using LENS. The LENS may be a module name or a\n"
+    " full lens name.  If a module name is given, then \"lns\" will be the lens\n"
+    " assumed.  The FILTER must be either \"incl\" or \"excl\".  If the filter is\n"
+    " \"incl\",  the FILE will be parsed by the LENS.  If the filter is \"excl\",\n"
+    " the FILE will be excluded from the LENS. FILE may contain wildcards." ;
+
+static const struct command_def cmd_transform_def = {
+    .name = "transform",
+    .opts = cmd_transform_opts,
+    .handler = cmd_transform,
+    .synopsis = "add a file transform",
+    .help = cmd_transform_help
 };
 
 static void cmd_save(struct command *cmd) {
@@ -963,30 +1112,195 @@ static const struct command_def cmd_insert_def = {
     .help = cmd_ins_help
 };
 
-static const struct command_def const *commands[] = {
-    &cmd_quit_def,
-    &cmd_clear_def,
-    &cmd_defnode_def,
-    &cmd_defvar_def,
-    &cmd_get_def,
-    &cmd_ins_def,
-    &cmd_insert_def,
-    &cmd_load_def,
-    &cmd_ls_def,
-    &cmd_match_def,
-    &cmd_mv_def,
-    &cmd_move_def,
-    &cmd_print_def,
-    &cmd_dump_xml_def,
-    &cmd_rm_def,
-    &cmd_save_def,
-    &cmd_set_def,
-    &cmd_setm_def,
-    &cmd_clearm_def,
-    &cmd_span_def,
-    &cmd_help_def,
-    &cmd_def_last
+static void cmd_store(struct command *cmd) {
+    const char *lens = arg_value(cmd, "lens");
+    const char *path = arg_value(cmd, "path");
+    const char *node = arg_value(cmd, "node");
+
+    aug_text_store(cmd->aug, lens, node, path);
+}
+
+static const struct command_opt_def cmd_store_opts[] = {
+    { .type = CMD_STR, .name = "lens", .optional = false,
+      .help = "the name of the lens" },
+    { .type = CMD_PATH, .name = "node", .optional = false,
+      .help = "where to find the input text" },
+    { .type = CMD_PATH, .name = "path", .optional = false,
+      .help = "where to store parsed text" },
+    CMD_OPT_DEF_LAST
 };
+
+static const char const cmd_store_help[] =
+    "Parse NODE using LENS and store the resulting tree at PATH.";
+
+static const struct command_def cmd_store_def = {
+    .name = "store",
+    .opts = cmd_store_opts,
+    .handler = cmd_store,
+    .synopsis = "parse text into tree",
+    .help = cmd_store_help
+};
+
+static void cmd_retrieve(struct command *cmd) {
+    const char *lens = arg_value(cmd, "lens");
+    const char *node_in = arg_value(cmd, "node_in");
+    const char *path = arg_value(cmd, "path");
+    const char *node_out = arg_value(cmd, "node_out");
+
+    aug_text_retrieve(cmd->aug, lens, node_in, path, node_out);
+}
+
+static const struct command_opt_def cmd_retrieve_opts[] = {
+    { .type = CMD_STR, .name = "lens", .optional = false,
+      .help = "the name of the lens" },
+    { .type = CMD_PATH, .name = "node_in", .optional = false,
+      .help = "the node containing the initial text (path expression)" },
+    { .type = CMD_PATH, .name = "path", .optional = false,
+      .help = "the tree to transform (path expression)" },
+    { .type = CMD_PATH, .name = "node_out", .optional = false,
+      .help = "where to store the resulting text (path expression)" },
+    CMD_OPT_DEF_LAST
+};
+
+static const char const cmd_retrieve_help[] =
+    "Transform tree at PATH back into text using lens LENS and store the\n"
+    " resulting string at NODE_OUT. Assume that the tree was initially read in\n"
+    " with the same lens and the string stored at NODE_IN as input.";
+
+static const struct command_def cmd_retrieve_def = {
+    .name = "retrieve",
+    .opts = cmd_retrieve_opts,
+    .handler = cmd_retrieve,
+    .synopsis = "transform tree into text",
+    .help = cmd_retrieve_help
+};
+
+/* Groups of commands */
+static const struct command_grp_def cmd_grp_admin_def = {
+    .name = "Admin",
+    .commands = {
+        &cmd_help_def,
+        &cmd_load_def,
+        &cmd_quit_def,
+        &cmd_retrieve_def,
+        &cmd_save_def,
+        &cmd_store_def,
+        &cmd_transform_def,
+        &cmd_def_last
+    }
+};
+
+static const struct command_grp_def cmd_grp_read_def = {
+    .name = "Read",
+    .commands = {
+        &cmd_dump_xml_def,
+        &cmd_get_def,
+        &cmd_label_def,
+        &cmd_ls_def,
+        &cmd_match_def,
+        &cmd_print_def,
+        &cmd_span_def,
+        &cmd_def_last
+    }
+};
+
+static const struct command_grp_def cmd_grp_write_def = {
+    .name = "Write",
+    .commands = {
+        &cmd_clear_def,
+        &cmd_clearm_def,
+        &cmd_ins_def,
+        &cmd_insert_def,
+        &cmd_mv_def,
+        &cmd_move_def,
+        &cmd_cp_def,
+        &cmd_copy_def,
+        &cmd_rename_def,
+        &cmd_rm_def,
+        &cmd_set_def,
+        &cmd_setm_def,
+        &cmd_touch_def,
+        &cmd_def_last
+    }
+};
+
+static const struct command_grp_def cmd_grp_pathx_def = {
+    .name = "Path expression",
+    .commands = {
+        &cmd_defnode_def,
+        &cmd_defvar_def,
+        &cmd_def_last
+    }
+};
+
+static const struct command_grp_def const *cmd_groups[] = {
+    &cmd_grp_admin_def,
+    &cmd_grp_read_def,
+    &cmd_grp_write_def,
+    &cmd_grp_pathx_def,
+    &cmd_grp_def_last
+};
+
+static const struct command_def *lookup_cmd_def(const char *name) {
+    for (int i = 0; cmd_groups[i]->name != NULL; i++) {
+        for (int j = 0; cmd_groups[i]->commands[j]->name != NULL; j++) {
+            if (STREQ(name, cmd_groups[i]->commands[j]->name))
+                return cmd_groups[i]->commands[j];
+        }
+    }
+    return NULL;
+}
+
+static void cmd_help(struct command *cmd) {
+    const char *name = arg_value(cmd, "command");
+    char buf[100];
+
+    if (name == NULL) {
+        //fprintf(cmd->out, "Commands:\n\n");
+        fprintf(cmd->out, "\n");
+        for (int i=0; cmd_groups[i]->name != NULL; i++) {
+            fprintf(cmd->out, "%s commands:\n", cmd_groups[i]->name);
+            for (int j=0; cmd_groups[i]->commands[j]->name != NULL; j++) {
+                const struct command_def *def = cmd_groups[i]->commands[j];
+                fprintf(cmd->out, "  %-10s - %s\n", def->name, def->synopsis);
+            }
+            fprintf(cmd->out, "\n");
+        }
+        fprintf(cmd->out,
+           "Type 'help <command>' for more information on a command\n\n");
+    } else {
+        const struct command_def *def = lookup_cmd_def(name);
+        const struct command_opt_def *odef = NULL;
+
+        ERR_THROW(def == NULL, cmd->aug, AUG_ECMDRUN,
+                  "unknown command %s\n", name);
+        fprintf(cmd->out, "  COMMAND\n");
+        fprintf(cmd->out, "    %s - %s\n\n", name, def->synopsis);
+        fprintf(cmd->out, "  SYNOPSIS\n");
+        fprintf(cmd->out, "    %s", name);
+
+        for (odef = def->opts; odef->name != NULL; odef++) {
+            format_defname(buf, odef, true);
+            fprintf(cmd->out, "%s", buf);
+        }
+        fprintf(cmd->out, "\n\n");
+        fprintf(cmd->out, "  DESCRIPTION\n");
+        format_desc(def->help);
+        if (def->opts->name != NULL) {
+            fprintf(cmd->out, "  OPTIONS\n");
+            for (odef = def->opts; odef->name != NULL; odef++) {
+                const char *help = odef->help;
+                if (help == NULL)
+                    help = "";
+                format_defname(buf, odef, false);
+                fprintf(cmd->out, "    %-10s %s\n", buf, help);
+            }
+        }
+        fprintf(cmd->out, "\n");
+    }
+ error:
+    return;
+}
 
 int aug_srun(augeas *aug, FILE *out, const char *text) {
     char *line = NULL;
@@ -1029,6 +1343,8 @@ int aug_srun(augeas *aug, FILE *out, const char *text) {
             result = -2;
             goto done;
         }
+
+        free_command_opts(&cmd);
         FREE(line);
         text = (*eol == '\0') ? eol : eol + 1;
     }

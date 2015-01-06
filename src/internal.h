@@ -65,6 +65,10 @@
  * Information about files */
 #define AUGEAS_META_FILES AUGEAS_META_TREE AUGEAS_FILES_TREE
 
+/* Define: AUGEAS_META_TEXT
+ * Information about text (see aug_text_store and aug_text_retrieve) */
+#define AUGEAS_META_TEXT AUGEAS_META_TREE "/text"
+
 /* Define: AUGEAS_META_ROOT
  * The root directory */
 #define AUGEAS_META_ROOT AUGEAS_META_TREE "/root"
@@ -283,6 +287,9 @@ char *format_pos(const char *text, int pos);
  */
 char* xread_file(const char *path);
 
+/* Like xread_file, but caller supplies a file pointer */
+char* xfread_file(FILE *fp);
+
 /* Get the error message for ERRNUM in a threadsafe way. Based on libvirt's
  * virStrError
  */
@@ -393,12 +400,11 @@ struct tree *make_tree(char *label, char *value,
  */
 struct tree  *make_tree_origin(struct tree *root);
 
-int tree_replace(struct augeas *aug, const char *path, struct tree *sub);
 /* Make a new tree node and append it to parent's children */
 struct tree *tree_append(struct tree *parent, char *label, char *value);
 
 int tree_rm(struct pathx *p);
-int tree_unlink(struct tree *tree);
+int tree_unlink(struct augeas *aug, struct tree *tree);
 struct tree *tree_set(struct pathx *p, const char *value);
 int tree_insert(struct pathx *p, const char *label, int before);
 int free_tree(struct tree *tree);
@@ -423,6 +429,15 @@ void tree_store_value(struct tree *tree, char **value);
 int tree_set_value(struct tree *tree, const char *value);
 /* Cleanly remove all children of TREE, but leave TREE itself unchanged */
 void tree_unlink_children(struct augeas *aug, struct tree *tree);
+/* Find a node in the tree at path FPATH; FPATH is a file path, i.e.
+ * not interpreted as a path expression. If no such node exists, return NULL
+ */
+struct tree *tree_fpath(struct augeas *aug, const char *fpath);
+/* Find a node in the tree at path FPATH; FPATH is a file path, i.e.
+ * not interpreted as a path expression. If no such node exists, create
+ * it and all its missing ancestors.
+ */
+struct tree *tree_fpath_cr(struct augeas *aug, const char *fpath);
 /* Find the node matching PATH.
  * Returns the node or NULL on error
  * Errors: EMMATCH - more than one node matches PATH
@@ -496,7 +511,8 @@ typedef enum {
     PATHX_ENOMATCH,
     PATHX_EARITY,
     PATHX_EREGEXP,
-    PATHX_EMMATCH
+    PATHX_EMMATCH,
+    PATHX_EREGEXPFLAG
 } pathx_errcode_t;
 
 struct pathx;

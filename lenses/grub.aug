@@ -5,7 +5,7 @@ Module: Grub
 Author: David Lutterkort <lutter@redhat.com>
 
 About: License
-   This file is licenced under the LGPLv2+, like the rest of Augeas.
+   This file is licenced under the LGPL v2+, like the rest of Augeas.
 
 About: Lens Usage
    To be documented
@@ -78,15 +78,16 @@ module Grub =
       [ command kw indent . value_sep dflt_sep . value_to_eol . eol ]
 
     (* View: kw_boot_arg *)
-    let kw_boot_arg (kw:string) = kw_arg kw "\t" " "
+    let kw_boot_arg (kw:regexp) = kw_arg kw "\t" " "
 
     (* View: kw_menu_arg *)
-    let kw_menu_arg (kw:string) = kw_arg kw "" " "
+    let kw_menu_arg (kw:regexp) = kw_arg kw "" " "
 
     (* View: password_arg *)
     let password_arg = [ key "password" .
       (spc . [ switch "md5" ])? .
-      spc . store (/[^ \t\n]+/ - "--md5") .
+      (spc . [ switch "encrypted" ])? .
+      spc . store (/[^ \t\n]+/ - /--[^ \t\n]+/) .
       (spc . [ label "file" . store /[^ \t\n]+/ ])? .
       eol ]
 
@@ -101,8 +102,8 @@ module Grub =
      *  This is a shell-only directive in upstream grub; the grub versions
      *  in at least Fedora/RHEL use this to find devices for UEFI boot *)
     let device =
-	  [ command "device" "" . Sep.space . store /\([A-Za-z0-9_.-]+\)/ . spc .
-		  [ label "file" . value_to_eol ] . Util.eol ]
+      [ command "device" "" . Sep.space . store /\([A-Za-z0-9_.-]+\)/ . spc .
+        [ label "file" . value_to_eol ] . Util.eol ]
 
     (* View: color *)
     let color =
@@ -131,6 +132,12 @@ module Grub =
           |[ spc . switch_arg /timeout|lines/ ])* .
           [ spc . key /console|serial|hercules/ ]* . eol ]
 
+    (* View: setkey *)
+    let setkey = [ command "setkey" "" .
+      ( spc . [ label "to" . store Rx.no_spaces ] .
+        spc . [ label "from" . store Rx.no_spaces ] )? .
+      eol ]
+
     (* View: menu_setting *)
     let menu_setting = kw_menu_arg "default"
                      | kw_menu_arg "fallback"
@@ -138,12 +145,15 @@ module Grub =
                      | kw_menu_arg "timeout"
                      | kw_menu_arg "splashimage"
                      | kw_menu_arg "gfxmenu"
+                     | kw_menu_arg "foreground"
                      | kw_menu_arg "background"
+                     | kw_menu_arg "verbose"
                      | serial
                      | terminal
                      | password_arg
                      | color
-		     | device
+                     | device
+                     | setkey
 
     (* View: title *)
     let title = del /title[ \t=]+/ "title " . value_to_eol . eol
@@ -197,19 +207,19 @@ module Grub =
 
     (* View: boot_setting
         <boot> entries *)
-    let boot_setting = kw_boot_arg "root"
-                     | kernel
-                     | kw_boot_arg "initrd"
-                     | kw_boot_arg "rootnoverify"
-                     | chainloader
-                     | kw_boot_arg "uuid"
-                     | kw_boot_arg "findroot"  (* Solaris extension *)
-                     | kw_boot_arg "bootfs"    (* Solaris extension *)
-                     | kw_pres "quiet"  (* Seems to be a Ubuntu extension *)
-                     | savedefault
-                     | configfile
-                     | module_line
-                     | map_line
+    let boot_setting =
+          let boot_arg_re = "root" | "initrd" | "rootnoverify" | "uuid"
+                          | "findroot" | "bootfs" (* Solaris extensions *)
+       in kw_boot_arg boot_arg_re
+        | kernel
+        | chainloader
+        | kw_pres "quiet"  (* Seems to be a Ubuntu extension *)
+        | savedefault
+        | configfile
+        | module_line
+        | map_line
+        | kw_pres "lock"
+        | kw_pres "makeactive"
 
     (* View: boot *)
     let boot =
@@ -274,7 +284,8 @@ module Grub =
     let lns = (comment | empty | menu_setting | boot | debian)*
 
     (* View: filter *)
-    let filter = incl "/boot/grub/menu.lst"
+    let filter = incl "/boot/grub/grub.conf"
+               . incl "/boot/grub/menu.lst"
                . incl "/etc/grub.conf"
 
     let xfm = transform lns filter

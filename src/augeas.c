@@ -43,6 +43,9 @@ static const char *const s_pathx  = "pathx";
 static const char *const s_error  = "error";
 static const char *const s_pos    = "pos";
 static const char *const s_vars   = "variables";
+static const char *const s_lens   = "lens";
+static const char *const s_excl   = "excl";
+static const char *const s_incl   = "incl";
 
 #define TREE_HIDDEN(tree) ((tree)->label == NULL)
 
@@ -78,7 +81,9 @@ static const char *const errcodes[] = {
     "Node has no span info",                            /* AUG_ENOSPAN */
     "Cannot move node into its descendant",             /* AUG_EMVDESC */
     "Failed to execute command",                        /* AUG_ECMDRUN */
-    "Invalid argument in function call"                 /* AUG_EBADARG */
+    "Invalid argument in function call",                /* AUG_EBADARG */
+    "Invalid label",                                    /* AUG_ELABEL */
+    "Cannot copy node into its descendant"              /* AUG_ECPDESC */
 };
 
 static void tree_mark_dirty(struct tree *tree) {
@@ -134,6 +139,44 @@ struct tree *tree_path_cr(struct tree *tree, int n, ...) {
     }
     va_end(ap);
     return tree;
+}
+
+static struct tree *tree_fpath_int(struct augeas *aug, const char *fpath,
+                                   bool create) {
+    int r;
+    char *steps = NULL, *step = NULL;
+    size_t nsteps = 0;
+    struct tree *result = NULL;
+
+    r = argz_create_sep(fpath, '/', &steps, &nsteps);
+    ERR_NOMEM(r < 0, aug);
+    result = aug->origin;
+    while ((step = argz_next(steps, nsteps, step))) {
+        if (create) {
+            result = tree_child_cr(result, step);
+            ERR_THROW(result == NULL, aug, AUG_ENOMEM,
+                      "while searching %s: can not create %s", fpath, step);
+        } else {
+            /* Lookup only */
+            result = tree_child(result, step);
+            if (result == NULL)
+                goto done;
+        }
+    }
+ done:
+    free(steps);
+    return result;
+ error:
+    result = NULL;
+    goto done;
+}
+
+struct tree *tree_fpath(struct augeas *aug, const char *fpath) {
+    return tree_fpath_int(aug, fpath, false);
+}
+
+struct tree *tree_fpath_cr(struct augeas *aug, const char *fpath) {
+    return tree_fpath_int(aug, fpath, true);
 }
 
 struct tree *tree_find(struct augeas *aug, const char *path) {
@@ -276,10 +319,19 @@ struct tree *tree_root_ctx(const struct augeas *aug) {
     p = pathx_aug_parse(aug, aug->origin, NULL, ctx_path, true);
     ERR_BAIL(aug);
 
-    r = pathx_find_one(p, &match);
-    ERR_THROW(r > 1, aug, AUG_EMMATCH,
-              "There are %d nodes matching the context %s, expecting one",
-              r, ctx_path);
+    if (pathx_first(p) == NULL) {
+        r = pathx_expand_tree(p, &match);
+        if (r < 0)
+            goto done;
+        r = tree_set_value(match, NULL);
+        if (r < 0)
+            goto done;
+    } else {
+        r = pathx_find_one(p, &match);
+        ERR_THROW(r > 1, aug, AUG_EMMATCH,
+                  "There are %d nodes matching the context %s, expecting one",
+                  r, ctx_path);
+    }
 
  done:
     free_pathx(p);
@@ -300,10 +352,13 @@ struct tree *tree_append(struct tree *parent,
 static struct tree *tree_append_s(struct tree *parent,
                                   const char *l0, char *v) {
     struct tree *result;
-    char *l = strdup(l0);
+    char *l;
 
-    if (l == NULL)
+    if (l0 == NULL) {
         return NULL;
+    } else {
+      l = strdup(l0);
+    }
     result = tree_append(parent, l, v);
     if (result == NULL)
         free(l);
@@ -332,12 +387,12 @@ static struct tree *tree_from_transform(struct augeas *aug,
     r = asprintf(&v, "@%s", modname);
     ERR_NOMEM(r < 0, aug);
 
-    t = tree_append_s(txfm, "lens", v);
+    t = tree_append_s(txfm, s_lens, v);
     ERR_NOMEM(t == NULL, aug);
     v = NULL;
 
     list_for_each(f, xfm->filter) {
-        const char *l = f->include ? strdup("incl") : strdup("excl");
+        const char *l = f->include ? s_incl : s_excl;
         v = strdup(f->glob->str);
         ERR_NOMEM(v == NULL, aug);
         t = tree_append_s(txfm, l, v);
@@ -346,7 +401,7 @@ static struct tree *tree_from_transform(struct augeas *aug,
     return txfm;
  error:
     free(v);
-    tree_unlink(txfm);
+    tree_unlink(aug, txfm);
     return NULL;
 }
 
@@ -585,6 +640,37 @@ struct augeas *aug_init(const char *root, const char *loadpath,
     return result;
 }
 
+/* Free one tree node */
+static void free_tree_node(struct tree *tree) {
+    if (tree == NULL)
+        return;
+
+    if (tree->span != NULL)
+        free_span(tree->span);
+    free(tree->label);
+    free(tree->value);
+    free(tree);
+}
+
+/* Only unlink; assume we know TREE is not in the symtab */
+static int tree_unlink_raw(struct tree *tree) {
+    int result = 0;
+
+    assert (tree->parent != NULL);
+    list_remove(tree, tree->parent->children);
+    tree_mark_dirty(tree->parent);
+    result = free_tree(tree->children) + 1;
+    free_tree_node(tree);
+    return result;
+}
+
+int tree_unlink(struct augeas *aug, struct tree *tree) {
+    if (tree == NULL)
+        return 0;
+    pathx_symtab_remove_descendants(aug->symtab, tree);
+    return tree_unlink_raw(tree);
+}
+
 void tree_unlink_children(struct augeas *aug, struct tree *tree) {
     if (tree == NULL)
         return;
@@ -592,7 +678,7 @@ void tree_unlink_children(struct augeas *aug, struct tree *tree) {
     pathx_symtab_remove_descendants(aug->symtab, tree);
 
     while (tree->children != NULL)
-        tree_unlink(tree->children);
+        tree_unlink_raw(tree->children);
 }
 
 static void tree_mark_files(struct tree *tree) {
@@ -612,8 +698,8 @@ static void tree_rm_dirty_files(struct augeas *aug, struct tree *tree) {
         return;
 
     if ((p = tree_child(tree, "path")) != NULL) {
-        aug_rm(aug, p->value);
-        tree_unlink(tree);
+        tree_unlink(aug, tree_fpath(aug, p->value));
+        tree_unlink(aug, tree);
     } else {
         struct tree *c = tree->children;
         while (c != NULL) {
@@ -637,7 +723,7 @@ static void tree_rm_dirty_leaves(struct augeas *aug, struct tree *tree,
     }
 
     if (tree != protect && tree->children == NULL)
-        tree_unlink(tree);
+        tree_unlink(aug, tree);
 }
 
 int aug_load(struct augeas *aug) {
@@ -753,15 +839,43 @@ int aug_get(const struct augeas *aug, const char *path, const char **value) {
     return -1;
 }
 
+int aug_label(const struct augeas *aug, const char *path, const char **label) {
+    struct pathx *p = NULL;
+    struct tree *match;
+    int r;
+
+    api_entry(aug);
+
+    p = pathx_aug_parse(aug, aug->origin, tree_root_ctx(aug), path, true);
+    ERR_BAIL(aug);
+
+    if (label != NULL)
+        *label = NULL;
+
+    r = pathx_find_one(p, &match);
+    ERR_BAIL(aug);
+    ERR_THROW(r > 1, aug, AUG_EMMATCH, "There are %d nodes matching %s",
+              r, path);
+
+    if (r == 1 && label != NULL)
+        *label = match->label;
+    free_pathx(p);
+
+    api_exit(aug);
+    return r;
+ error:
+    free_pathx(p);
+    api_exit(aug);
+    return -1;
+}
+
 static void record_var_meta(struct augeas *aug, const char *name,
                             const char *expr) {
     /* Record the definition of the variable */
     struct tree *tree = tree_path_cr(aug->origin, 2, s_augeas, s_vars);
     ERR_NOMEM(tree == NULL, aug);
     if (expr == NULL) {
-        tree = tree_child(tree, name);
-        if (tree != NULL)
-            tree_unlink(tree);
+        tree_unlink(aug, tree_child(tree, name));
     } else {
         tree = tree_child_cr(tree, name);
         ERR_NOMEM(tree == NULL, aug);
@@ -1009,18 +1123,6 @@ struct tree *make_tree_origin(struct tree *root) {
     return origin;
 }
 
-/* Free one tree node */
-static void free_tree_node(struct tree *tree) {
-    if (tree == NULL)
-        return;
-
-    if (tree->span != NULL)
-        free_span(tree->span);
-    free(tree->label);
-    free(tree->value);
-    free(tree);
-}
-
 /* Recursively free the whole tree TREE and all its siblings */
 int free_tree(struct tree *tree) {
     int cnt = 0;
@@ -1034,17 +1136,6 @@ int free_tree(struct tree *tree) {
     }
 
     return cnt;
-}
-
-int tree_unlink(struct tree *tree) {
-    int result = 0;
-
-    assert (tree->parent != NULL);
-    list_remove(tree, tree->parent->children);
-    tree_mark_dirty(tree->parent);
-    result = free_tree(tree->children) + 1;
-    free_tree_node(tree);
-    return result;
 }
 
 int tree_rm(struct pathx *p) {
@@ -1073,7 +1164,7 @@ int tree_rm(struct pathx *p) {
     }
 
     for (i = 0; i < ndel; i++)
-        cnt += tree_unlink(del[i]);
+        cnt += tree_unlink_raw(del[i]);
     free(del);
 
     return cnt;
@@ -1156,33 +1247,6 @@ int aug_span(struct augeas *aug, const char *path, char **filename,
     return result;
 }
 
-int tree_replace(struct augeas *aug, const char *path, struct tree *sub) {
-    struct tree *parent;
-    struct pathx *p = NULL;
-    int r;
-
-    p = pathx_aug_parse(aug, aug->origin, tree_root_ctx(aug), path, true);
-    ERR_BAIL(aug);
-
-    r = tree_rm(p);
-    if (r == -1)
-        goto error;
-
-    parent = tree_set(p, NULL);
-    if (parent == NULL)
-        goto error;
-
-    list_append(parent->children, sub);
-    list_for_each(s, sub) {
-        s->parent = parent;
-    }
-    free_pathx(p);
-    return 0;
- error:
-    free_pathx(p);
-    return -1;
-}
-
 int aug_mv(struct augeas *aug, const char *src, const char *dst) {
     struct pathx *s = NULL, *d = NULL;
     struct tree *ts, *td, *t;
@@ -1225,13 +1289,99 @@ int aug_mv(struct augeas *aug, const char *src, const char *dst) {
     ts->value = NULL;
     ts->children = NULL;
 
-    tree_unlink(ts);
+    tree_unlink(aug, ts);
     tree_mark_dirty(td);
 
     ret = 0;
  error:
     free_pathx(s);
     free_pathx(d);
+    api_exit(aug);
+    return ret;
+}
+
+static void tree_copy_rec(struct tree *src, struct tree *dst) {
+  struct tree *n;
+  char *value;
+
+  list_for_each(c, src->children) {
+    value = c->value == NULL ? NULL : strdup(c->value);
+    n = tree_append_s(dst, c->label, value);
+    tree_copy_rec(c, n);
+  }
+}
+
+int aug_cp(struct augeas *aug, const char *src, const char *dst) {
+    struct pathx *s = NULL, *d = NULL;
+    struct tree *ts, *td, *t;
+    int r, ret;
+
+    api_entry(aug);
+
+    ret = -1;
+    s = pathx_aug_parse(aug, aug->origin, tree_root_ctx(aug), src, true);
+    ERR_BAIL(aug);
+
+    d = pathx_aug_parse(aug, aug->origin, tree_root_ctx(aug), dst, true);
+    ERR_BAIL(aug);
+
+    r = find_one_node(s, &ts);
+    if (r < 0)
+        goto error;
+
+    r = pathx_expand_tree(d, &td);
+    if (r == -1)
+        goto error;
+
+    /* Don't copy SRC into its own descendent */
+    t = td;
+    do {
+        ERR_THROW(t == ts, aug, AUG_ECPDESC,
+                  "destination %s is a descendant of %s", dst, src);
+        t = t->parent;
+    } while (t != aug->origin);
+
+    tree_set_value(td, ts->value);
+    free_tree(td->children);
+    td->children = NULL;
+    tree_copy_rec(ts, td);
+    tree_mark_dirty(td);
+
+    ret = 0;
+ error:
+    free_pathx(s);
+    free_pathx(d);
+    api_exit(aug);
+    return ret;
+}
+
+int aug_rename(struct augeas *aug, const char *src, const char *lbl) {
+    struct pathx *s = NULL;
+    struct tree *ts;
+    int ret;
+    int count = 0;
+
+    api_entry(aug);
+
+    ret = -1;
+    ERR_THROW(strchr(lbl, '/') != NULL, aug, AUG_ELABEL,
+              "Label %s contains a /", lbl);
+
+    s = pathx_aug_parse(aug, aug->origin, tree_root_ctx(aug), src, true);
+    ERR_BAIL(aug);
+
+    for (ts = pathx_first(s); ts != NULL; ts = pathx_next(s)) {
+        free(ts->label);
+        ts->label = strdup(lbl);
+        tree_mark_dirty(ts);
+        count ++;
+    }
+
+    free_pathx(s);
+    api_exit(aug);
+    return count;
+ error:
+    free_pathx(s);
     api_exit(aug);
     return ret;
 }
@@ -1397,7 +1547,8 @@ static int unlink_removed_files(struct augeas *aug,
             for (struct tree *t = pathx_first(px);
                  t != NULL;
                  t = pathx_next(px)) {
-                remove_file(aug, t);
+                if (remove_file(aug, t) < 0)
+                    result = -1;
             }
             free_pathx(px);
         } else if (tf->dirty && ! tree_child(tm, "path")) {
@@ -1430,10 +1581,9 @@ int aug_save(struct augeas *aug) {
         transform_validate(aug, xfm);
 
     if (files->dirty) {
-        list_for_each(t, files->children) {
-            if (tree_save(aug, t, AUGEAS_FILES_TREE) == -1)
-                ret = -1;
-        }
+        if (tree_save(aug, files->children, AUGEAS_FILES_TREE) == -1)
+            ret = -1;
+
         /* Remove files whose entire subtree was removed. */
         if (meta_files != NULL) {
             if (unlink_removed_files(aug, files, meta_files) < 0)
@@ -1538,19 +1688,71 @@ int dump_tree(FILE *out, struct tree *tree) {
     return result;
 }
 
+static int to_xml_span(xmlNodePtr elem, const char *pfor, int start, int end) {
+    int r;
+    char *buf;
+    xmlAttrPtr prop;
+    xmlNodePtr span_elem;
+
+    span_elem = xmlNewChild(elem, NULL, BAD_CAST "span", NULL);
+    if (span_elem == NULL)
+        return -1;
+
+    prop = xmlSetProp(span_elem, BAD_CAST "for", BAD_CAST pfor);
+    if (prop == NULL)
+        return -1;
+
+    /* Format and set the start property */
+    r = xasprintf(&buf, "%d", start);
+    if (r < 0)
+        return -1;
+
+    prop = xmlSetProp(span_elem, BAD_CAST "start", BAD_CAST buf);
+    FREE(buf);
+    if (prop == NULL)
+        return -1;
+
+    /* Format and set the end property */
+    r = xasprintf(&buf, "%d", end);
+    if (r < 0)
+        return -1;
+
+    prop = xmlSetProp(span_elem, BAD_CAST "end", BAD_CAST buf);
+    FREE(buf);
+    if (prop == NULL)
+        return -1;
+
+    return 0;
+}
+
 static int to_xml_one(xmlNodePtr elem, const struct tree *tree,
                       const char *pathin) {
     xmlNodePtr value;
     xmlAttrPtr prop;
+    int r;
 
     prop = xmlSetProp(elem, BAD_CAST "label", BAD_CAST tree->label);
     if (prop == NULL)
         goto error;
 
     if (tree->span) {
+        struct span *span = tree->span;
+
         prop = xmlSetProp(elem, BAD_CAST "file",
-                          BAD_CAST tree->span->filename->str);
+                          BAD_CAST span->filename->str);
         if (prop == NULL)
+            goto error;
+
+        r = to_xml_span(elem, "label", span->label_start, span->label_end);
+        if (r < 0)
+            goto error;
+
+        r = to_xml_span(elem, "value", span->value_start, span->value_end);
+        if (r < 0)
+            goto error;
+
+        r = to_xml_span(elem, "node", span->span_start, span->span_end);
+        if (r < 0)
             goto error;
     }
 
@@ -1627,6 +1829,71 @@ static int tree_to_xml(struct pathx *p, xmlNode **xml, const char *pathin) {
     return -1;
 }
 
+int aug_text_store(augeas *aug, const char *lens, const char *node,
+                   const char *path) {
+
+    struct pathx *p;
+    const char *src;
+    int result = -1, r;
+
+    api_entry(aug);
+
+    /* Validate PATH is syntactically correct */
+    p = pathx_aug_parse(aug, aug->origin, tree_root_ctx(aug), path, true);
+    ERR_BAIL(aug);
+    free_pathx(p);
+
+    r = aug_get(aug, node, &src);
+    ERR_BAIL(aug);
+    ERR_THROW(r == 0, aug, AUG_ENOMATCH,
+              "Source node %s does not exist", node);
+    ERR_THROW(src == NULL, aug, AUG_ENOMATCH,
+              "Source node %s has a NULL value", node);
+
+    result = text_store(aug, lens, path, src);
+ error:
+    api_exit(aug);
+    return result;
+}
+
+int aug_text_retrieve(struct augeas *aug, const char *lens,
+                      const char *node_in, const char *path,
+                      const char *node_out) {
+    struct tree *tree = NULL;
+    const char *src;
+    char *out = NULL;
+    struct tree *tree_out;
+    int r;
+
+    api_entry(aug);
+
+    tree = tree_find(aug, path);
+    ERR_BAIL(aug);
+
+    r = aug_get(aug, node_in, &src);
+    ERR_BAIL(aug);
+    ERR_THROW(r == 0, aug, AUG_ENOMATCH,
+              "Source node %s does not exist", node_in);
+    ERR_THROW(src == NULL, aug, AUG_ENOMATCH,
+              "Source node %s has a NULL value", node_in);
+
+    r = text_retrieve(aug, lens, path, tree, src, &out);
+    if (r < 0)
+        goto error;
+
+    tree_out = tree_find_cr(aug, node_out);
+    ERR_BAIL(aug);
+
+    tree_store_value(tree_out, &out);
+
+    api_exit(aug);
+    return 0;
+ error:
+    free(out);
+    api_exit(aug);
+    return -1;
+}
+
 int aug_to_xml(const struct augeas *aug, const char *pathin,
                xmlNode **xmldoc, unsigned int flags) {
     struct pathx *p;
@@ -1637,7 +1904,7 @@ int aug_to_xml(const struct augeas *aug, const char *pathin,
     ARG_CHECK(flags != 0, aug, "aug_to_xml: FLAGS must be 0");
     ARG_CHECK(xmldoc == NULL, aug, "aug_to_xml: XMLDOC must be non-NULL");
 
-    if (pathin == NULL || strlen(pathin) == 1) {
+    if (pathin == NULL || strlen(pathin) == 0 || strcmp(pathin, "/") == 0) {
         pathin = "/*";
     }
 
@@ -1654,6 +1921,68 @@ int aug_to_xml(const struct augeas *aug, const char *pathin,
         *xmldoc = NULL;
     api_exit(aug);
     return -1;
+}
+
+int aug_transform(struct augeas *aug, const char *lens,
+                  const char *file, int excl) {
+    struct tree *meta = tree_child_cr(aug->origin, s_augeas);
+    struct tree *load = tree_child_cr(meta, s_load);
+
+    int r = 0, result = -1;
+    struct tree *xfm = NULL, *lns = NULL, *t = NULL;
+    const char *filter = NULL;
+    char *p;
+    int exists;
+    char *lensname = NULL, *xfmname = NULL;
+
+    api_entry(aug);
+
+    ERR_NOMEM(meta == NULL || load == NULL, aug);
+
+    ARG_CHECK(STREQ("", lens), aug, "aug_transform: LENS must not be empty");
+    ARG_CHECK(STREQ("", file), aug, "aug_transform: FILE must not be empty");
+
+    if ((p = strrchr(lens, '.'))) {
+        lensname = strdup(lens);
+        xfmname = strndup(lens, p - lens);
+        ERR_NOMEM(lensname == NULL || xfmname == NULL, aug);
+    } else {
+        r = xasprintf(&lensname, "%s.lns", lens);
+        xfmname = strdup(lens);
+        ERR_NOMEM(r < 0 || xfmname == NULL, aug);
+    }
+
+    xfm = tree_child_cr(load, xfmname);
+    ERR_NOMEM(xfm == NULL, aug);
+
+    lns = tree_child_cr(xfm, s_lens);
+    ERR_NOMEM(lns == NULL, aug);
+
+    tree_store_value(lns, &lensname);
+
+    exists = 0;
+
+    filter = excl ? s_excl : s_incl;
+    list_for_each(c, xfm->children) {
+        if (c->value != NULL && STREQ(c->value, file)
+            && streqv(c->label, filter)) {
+            exists = 1;
+            break;
+        }
+    }
+    if (! exists) {
+        t = tree_append_s(xfm, filter, NULL);
+        ERR_NOMEM(t == NULL, aug);
+        r = tree_set_value(t, file);
+        ERR_NOMEM(r < 0, aug);
+    }
+
+    result = 0;
+ error:
+    free(lensname);
+    free(xfmname);
+    api_exit(aug);
+    return result;
 }
 
 int aug_print(const struct augeas *aug, FILE *out, const char *pathin) {
@@ -1686,6 +2015,11 @@ void aug_close(struct augeas *aug) {
     /* There's no point in bothering with api_entry/api_exit here */
     free_tree(aug->origin);
     unref(aug->modules, module);
+    if (aug->error->exn != NULL) {
+        aug->error->exn->ref = 0;
+        free_value(aug->error->exn);
+        aug->error->exn = NULL;
+    }
     free((void *) aug->root);
     free(aug->modpathz);
     free_symtab(aug->symtab);

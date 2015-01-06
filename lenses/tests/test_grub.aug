@@ -12,10 +12,13 @@ module Test_grub =
 device (hd0) HD(1,800,64000,9895c137-d4b2-4e3b-a93b-dc9ac4)
 password --md5 $1$M9NLj$p2gs87vwNv48BUu.wAfVw0
 default=0
+setkey
+setkey less backquote
 background 103332
 timeout=5
 splashimage=(hd0,0)/grub/splash.xpm.gz
 gfxmenu=(hd0,0)/boot/message
+verbose = 0
 hiddenmenu
 title Fedora (2.6.24.4-64.fc8)
         root (hd0,0)
@@ -36,6 +39,8 @@ title Fedora (2.6.24.3-34.fc8)
         initrd /initrd-2.6.24.3-34.fc8.img
         map (hd0) (hd1)
 title othermenu
+        lock
+        makeactive
         configfile /boot/grub/othergrub.conf
 "
 
@@ -50,14 +55,19 @@ title othermenu
     { "#comment" = "initrd /initrd-version.img" }
     { "#comment" = "boot=/dev/sda" }
     { "device"   = "(hd0)"
-	    { "file" = "HD(1,800,64000,9895c137-d4b2-4e3b-a93b-dc9ac4)" } }
+        { "file" = "HD(1,800,64000,9895c137-d4b2-4e3b-a93b-dc9ac4)" } }
     { "password" = "$1$M9NLj$p2gs87vwNv48BUu.wAfVw0"
         { "md5" } }
     { "default" = "0" }
+    { "setkey" }
+    { "setkey"
+        { "to" = "less" }
+        { "from" = "backquote" } }
     { "background" = "103332" }
     { "timeout" = "5" }
     { "splashimage" = "(hd0,0)/grub/splash.xpm.gz" }
     { "gfxmenu" = "(hd0,0)/boot/message" }
+    { "verbose" = "0" }
     { "hiddenmenu" }
     { "title" = "Fedora (2.6.24.4-64.fc8)"
         { "root" = "(hd0,0)" }
@@ -82,6 +92,8 @@ title othermenu
         { "initrd" = "/initrd-2.6.24.3-34.fc8.img" }
         { "map" { "from" = "(hd0)" } { "to" = "(hd1)" } } }
     { "title" = "othermenu"
+        { "lock" }
+        { "makeactive" }
         { "configfile" = "/boot/grub/othergrub.conf" } }
 
 
@@ -150,6 +162,24 @@ initrd\t\t/boot/initrd.img-2.6.18-6-vserver-686
 
   test Grub.savedefault put "savedefault\n" after
     set "/savedefault" "3" = "savedefault 3\n"
+
+  test Grub.lns get
+"password foo
+password foo /boot/grub/custom.lst
+password --md5 $1$Ahx/T0$Sgcp7Z0xgGlyANIJCdESi.
+password --encrypted ^9^32kwzzX./3WISQ0C
+password --encrypted ^9^32kwzzX./3WISQ0C /boot/grub/custom.lst
+" =
+    { "password" = "foo" }
+    { "password" = "foo"
+        { "file" = "/boot/grub/custom.lst" } }
+    { "password" = "$1$Ahx/T0$Sgcp7Z0xgGlyANIJCdESi."
+        { "md5" } }
+    { "password" = "^9^32kwzzX./3WISQ0C"
+        { "encrypted" } }
+    { "password" = "^9^32kwzzX./3WISQ0C"
+        { "encrypted" }
+        { "file" = "/boot/grub/custom.lst" } }
 
   (* BZ 590067 - handle comments in a title section *)
   (* Comments within a boot stanza belong to that boot stanza *)

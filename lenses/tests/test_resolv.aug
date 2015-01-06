@@ -11,7 +11,10 @@ search mynet.com anotherorg.net
 sortlist 130.155.160.0/255.255.240.0 130.155.0.0
 
 options ndots:3 debug timeout:2
-options no-ip6-dotint  # and EOL comments
+options no-ip6-dotint single-request-reopen # and EOL comments
+
+lookup file bind
+family inet6 inet4
 "
 
 test Resolv.lns get conf =
@@ -39,7 +42,15 @@ test Resolv.lns get conf =
    { "options"
         { "ip6-dotint"
              { "negate" } }
+	{ "single-request-reopen" }
         { "#comment" = "and EOL comments" } }
+   {}
+   { "lookup"
+        { "file" }
+        { "bind" } }
+   { "family"
+        { "inet6" }
+        { "inet4" } }
 
 test Resolv.ip6_dotint
    put "ip6-dotint"

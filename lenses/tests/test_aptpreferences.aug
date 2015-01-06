@@ -5,6 +5,7 @@ Package: *
 Pin: release a=backports
 Pin-Priority: 100
 
+# This is a comment
 Explanation: My packages are the most prioritary
 Package: *
 Pin: release l=Raphink, v=3.0
@@ -27,6 +28,7 @@ Pin-Priority: 700
               { "a" = "backports" } }
           { "Pin-Priority" = "100" } }
        { "2"
+          { "#comment"     = "This is a comment" }
           { "Explanation"  = "My packages are the most prioritary" }
           { "Package"      = "*" }
           { "Pin"          = "release"
@@ -51,7 +53,14 @@ Pin-Priority: 700
        set "/1/Pin" "version";
        set "/1/Pin/version" "1.2.3-4";
        set "/1/Pin-Priority" "2000"
-    = "Package: something-funny
+    = "
+Package: something-funny
 Pin: version 1.2.3-4
 Pin-Priority: 2000
 "
+
+(* Test: AptPreferences.pin
+     Spaces in origins are valid *)
+test AptPreferences.pin get "Pin: release o=Quantum GIS project\n" =
+  { "Pin" = "release"
+    { "o" = "Quantum GIS project" } }

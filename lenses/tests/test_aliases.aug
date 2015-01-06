@@ -92,6 +92,20 @@ bin:		root , ruth,
         { "value" = "target1" }
         { "value" = "target2" } }
 
+  (* Test: Aliases.lns
+     Ticket #229: commands can be fully enclosed in quotes *)
+  test Aliases.lns get "somebody: \"|exit 67\"\n" =
+    { "1"
+        { "name" = "somebody" }
+        { "value" = "\"|exit 67\"" } }
+
+  (* Test: Aliases.lns
+     Don't have to have whitespace after the colon *)
+  test Aliases.lns get "alias:target\n" =
+    { "1"
+        { "name" = "alias" }
+        { "value" = "target" } }
+
 (* Local Variables: *)
 (* mode: caml       *)
 (* End:             *)

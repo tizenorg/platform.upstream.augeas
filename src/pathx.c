@@ -49,7 +49,8 @@ static const char *const errcodes[] = {
     "no match for path expression",               /* PATHX_ENOMATCH */
     "wrong number of arguments in function call", /* PATHX_EARITY */
     "invalid regular expression",                 /* PATHX_EREGEXP */
-    "too many matches"                            /* PATHX_EMMATCH */
+    "too many matches",                           /* PATHX_EMMATCH */
+    "wrong flag for regexp"                       /* PATHX_EREGEXPFLAG */
 };
 
 /*
@@ -268,7 +269,7 @@ static inline int streqx(const char *s1, const char *s2) {
 
 /* Functions */
 
-typedef void (*func_impl_t)(struct state *state);
+typedef void (*func_impl_t)(struct state *state, int nargs);
 
 struct func {
     const char      *name;
@@ -278,17 +279,20 @@ struct func {
     func_impl_t      impl;
 };
 
-static void func_last(struct state *state);
-static void func_position(struct state *state);
-static void func_count(struct state *state);
-static void func_label(struct state *state);
-static void func_regexp(struct state *state);
-static void func_glob(struct state *state);
-static void func_int(struct state *state);
+static void func_last(struct state *state, int nargs);
+static void func_position(struct state *state, int nargs);
+static void func_count(struct state *state, int nargs);
+static void func_label(struct state *state, int nargs);
+static void func_regexp(struct state *state, int nargs);
+static void func_regexp_flag(struct state *state, int nargs);
+static void func_glob(struct state *state, int nargs);
+static void func_int(struct state *state, int nargs);
 
 static const enum type const arg_types_nodeset[] = { T_NODESET };
 static const enum type const arg_types_string[] = { T_STRING };
 static const enum type const arg_types_bool[] = { T_BOOLEAN };
+static const enum type const arg_types_string_string[] = { T_STRING, T_STRING };
+static const enum type const arg_types_nodeset_string[] = { T_NODESET, T_STRING };
 
 static const struct func builtin_funcs[] = {
     { .name = "last", .arity = 0, .type = T_NUMBER, .arg_types = NULL,
@@ -306,6 +310,12 @@ static const struct func builtin_funcs[] = {
     { .name = "regexp", .arity = 1, .type = T_REGEXP,
       .arg_types = arg_types_nodeset,
       .impl = func_regexp },
+    { .name = "regexp", .arity = 2, .type = T_REGEXP,
+      .arg_types = arg_types_string_string,
+      .impl = func_regexp_flag },
+    { .name = "regexp", .arity = 2, .type = T_REGEXP,
+      .arg_types = arg_types_nodeset_string,
+      .impl = func_regexp_flag },
     { .name = "glob", .arity = 1, .type = T_REGEXP,
       .arg_types = arg_types_string,
       .impl = func_glob },
@@ -612,7 +622,15 @@ static struct value *expr_value(struct expr *expr, struct state *state) {
  ************************************************************************/
 static void eval_expr(struct expr *expr, struct state *state);
 
-static void func_last(struct state *state) {
+
+#define ensure_arity(min, max)                                          \
+    if (nargs < min || nargs > max) {                                   \
+        STATE_ERROR(state, PATHX_EINTERNAL);                            \
+        return;                                                         \
+    }
+
+static void func_last(struct state *state, int nargs) {
+    ensure_arity(0, 0);
     value_ind_t vind = make_value(T_NUMBER, state);
     RET_ON_ERROR;
 
@@ -620,7 +638,8 @@ static void func_last(struct state *state) {
     push_value(vind, state);
 }
 
-static void func_position(struct state *state) {
+static void func_position(struct state *state, int nargs) {
+    ensure_arity(0, 0);
     value_ind_t vind = make_value(T_NUMBER, state);
     RET_ON_ERROR;
 
@@ -628,7 +647,8 @@ static void func_position(struct state *state) {
     push_value(vind, state);
 }
 
-static void func_count(struct state *state) {
+static void func_count(struct state *state, int nargs) {
+    ensure_arity(1, 1);
     value_ind_t vind = make_value(T_NUMBER, state);
     RET_ON_ERROR;
 
@@ -637,7 +657,8 @@ static void func_count(struct state *state) {
     push_value(vind, state);
 }
 
-static void func_label(struct state *state) {
+static void func_label(struct state *state, int nargs) {
+    ensure_arity(0, 0);
     value_ind_t vind = make_value(T_STRING, state);
     char *s;
 
@@ -655,7 +676,8 @@ static void func_label(struct state *state) {
     push_value(vind, state);
 }
 
-static void func_int(struct state *state) {
+static void func_int(struct state *state, int nargs) {
+    ensure_arity(1, 1);
     value_ind_t vind = make_value(T_NUMBER, state);
     int64_t i = -1;
     RET_ON_ERROR;
@@ -689,7 +711,7 @@ static void func_int(struct state *state) {
 }
 
 static struct regexp *
-nodeset_as_regexp(struct info *info, struct nodeset *ns, int glob) {
+nodeset_as_regexp(struct info *info, struct nodeset *ns, int glob, int nocase) {
     struct regexp *result = NULL;
     struct regexp **rx = NULL;
     int used = 0;
@@ -702,7 +724,7 @@ nodeset_as_regexp(struct info *info, struct nodeset *ns, int glob) {
     if (used == 0) {
         /* If the nodeset is empty, make sure we produce a regexp
          * that never matches anything */
-        result = make_regexp_unescape(info, "[^\001-\7ff]", 0);
+        result = make_regexp_unescape(info, "[^\001-\7ff]", nocase);
     } else {
         if (ALLOC_N(rx, ns->used) < 0)
             goto error;
@@ -729,7 +751,7 @@ nodeset_as_regexp(struct info *info, struct nodeset *ns, int glob) {
     return result;
 }
 
-static void func_regexp_or_glob(struct state *state, int glob) {
+static void func_regexp_or_glob(struct state *state, int glob, int nocase) {
     value_ind_t vind = make_value(T_REGEXP, state);
     int r;
 
@@ -742,9 +764,9 @@ static void func_regexp_or_glob(struct state *state, int glob) {
         if (glob)
             rx = make_regexp_from_glob(state->error->info, v->string);
         else
-            rx = make_regexp_unescape(state->error->info, v->string, 0);
+            rx = make_regexp_unescape(state->error->info, v->string, nocase);
     } else if (v->tag == T_NODESET) {
-        rx = nodeset_as_regexp(state->error->info, v->nodeset, glob);
+        rx = nodeset_as_regexp(state->error->info, v->nodeset, glob, nocase);
     } else {
         assert(0);
     }
@@ -766,12 +788,27 @@ static void func_regexp_or_glob(struct state *state, int glob) {
     push_value(vind, state);
 }
 
-static void func_regexp(struct state *state) {
-    func_regexp_or_glob(state, 0);
+static void func_regexp(struct state *state, int nargs) {
+    ensure_arity(1, 1);
+    func_regexp_or_glob(state, 0, 0);
 }
 
-static void func_glob(struct state *state) {
-    func_regexp_or_glob(state, 1);
+static void func_regexp_flag(struct state *state, int nargs) {
+    ensure_arity(2, 2);
+    int nocase = 0;
+    struct value *f = pop_value(state);
+
+    if (STREQ("i", f->string))
+        nocase = 1;
+    else
+        STATE_ERROR(state, PATHX_EREGEXPFLAG);
+
+    func_regexp_or_glob(state, 0, nocase);
+}
+
+static void func_glob(struct state *state, int nargs) {
+    ensure_arity(1, 1);
+    func_regexp_or_glob(state, 1, 0);
 }
 
 static bool coerce_to_bool(struct value *v) {
@@ -1079,7 +1116,7 @@ static void eval_app(struct expr *expr, struct state *state) {
         eval_expr(expr->args[i], state);
         RET_ON_ERROR;
     }
-    expr->func->impl(state);
+    expr->func->impl(state, expr->func->arity);
 }
 
 static bool eval_pred(struct expr *expr, struct state *state) {
@@ -1347,6 +1384,8 @@ static void check_app(struct expr *expr, struct state *state) {
         const struct func *fn = builtin_funcs + f;
         if (STRNEQ(expr->func->name, fn->name))
             continue;
+        if (expr->func->arity != fn->arity)
+            continue;
 
         int match = 1;
         for (int i=0; i < expr->func->arity; i++) {
@@ -1574,7 +1613,7 @@ static void push_new_binary_op(enum binary_op op, struct state *state) {
  * Name ::= NameNoWS NameWS* NameNoWS | NameNoWS
  */
 static char *parse_name(struct state *state) {
-    static const char const follow[] = "][|/=()!";
+    static const char const follow[] = "][|/=()!,";
     const char *s = state->pos;
     char *result;
 
@@ -1920,11 +1959,13 @@ static void parse_literal(struct state *state) {
 static void parse_function_call(struct state *state) {
     const struct func *func = NULL;
     struct expr *expr = NULL;
-    int nargs = 0;
+    int nargs = 0, find = 0;
 
-    for (int i=0; i < ARRAY_CARDINALITY(builtin_funcs); i++) {
-        if (looking_at(state, builtin_funcs[i].name, "("))
-            func = builtin_funcs + i;
+    for (; find < ARRAY_CARDINALITY(builtin_funcs); find++) {
+        if (looking_at(state, builtin_funcs[find].name, "(")) {
+            func = builtin_funcs + find;
+            break;
+        }
     }
     if (func == NULL) {
         STATE_ERROR(state, PATHX_ENAME);
@@ -1944,7 +1985,18 @@ static void parse_function_call(struct state *state) {
         }
     }
 
-    if (nargs != func->arity) {
+    int found = 0; /* Whether there is a builtin matching in name and arity */
+    for (int i=find; i < ARRAY_CARDINALITY(builtin_funcs); i++) {
+        if (STRNEQ(func->name, builtin_funcs[i].name))
+            break;
+        if (builtin_funcs[i].arity == nargs) {
+            func = builtin_funcs + i;
+            found = 1;
+            break;
+        }
+    }
+
+    if (! found) {
         STATE_ERROR(state, PATHX_EARITY);
         return;
     }

@@ -11,7 +11,7 @@ Reference: Freedesktop.org
    http://standards.freedesktop.org/desktop-entry-spec/desktop-entry-spec-latest.html
 
 About: License
-   This file is licenced under the LGPLv2+, like the rest of Augeas.
+   This file is licenced under the LGPL v2+, like the rest of Augeas.
 *)
 
 
@@ -34,11 +34,11 @@ let title = IniFile.title IniFile.record_re
 
 let sep = IniFile.sep "=" "="
 
-let setting = Rx.word
+let setting = /[A-Za-z0-9_.-]+([][@A-Za-z0-9_.-]+)?/
 
 (* Variable: sto_to_comment
 Store until comment *)
-let sto_to_comment = Sep.opt_space . store /[^# \t\n][^#\n]*[^# \t\n]|[^# \t\n]/
+let sto_to_comment = Sep.opt_space . store /[^# \t\r\n][^#\r\n]*[^# \t\r\n]|[^# \t\r\n]/
 
 (* Entries can have comments at their end and so they are modified to represent as such *)
 let entry = [ key setting . sep . sto_to_comment? . (comment|IniFile.eol) ] | comment

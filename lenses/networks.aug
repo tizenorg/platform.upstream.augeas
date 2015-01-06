@@ -8,7 +8,7 @@ About: Reference
   This lens tries to keep as close as possible to `man 5 networks` where possible.
 
 About: License
-   This file is licenced under the LGPLv2+, like the rest of Augeas.
+   This file is licenced under the LGPL v2+, like the rest of Augeas.
 
 About: Lens Usage
    To be documented
@@ -26,12 +26,12 @@ autoload xfm
 let ipv4 =
   let dot     = "." in
   let digits  = /(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)/ in
-    digits . dot . digits . dot . digits . (dot . "0")?
+    digits . (dot . digits . (dot . digits . (dot . digits)?)?)?
 
 (*View: entry *)
 let entry =
   let alias = [ seq "alias" . store Rx.word ] in
-      [ seq "network"
+      [ seq "network" . counter "alias"
     . [ label "name" . store Rx.word ]
     . [ Sep.space . label "number" . store ipv4 ]
     . [ Sep.space . label "aliases" . Build.opt_list alias Sep.space ]?

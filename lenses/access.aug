@@ -8,7 +8,7 @@ About: Reference
   Some examples of valid entries can be found in access.conf or "man access.conf"
 
 About: License
-  This file is licensed under the LGPLv2+, like the rest of Augeas.
+  This file is licensed under the LGPL v2+, like the rest of Augeas.
 
 About: Lens Usage
   Sample usage of this lens in augtool
@@ -48,10 +48,14 @@ let colon     = del (Rx.opt_space . ":" . Rx.opt_space) " : "
  *)
 let access    = label "access" . store /[+-]/
 
+(* Variable: identifier_re
+   Regex for user/group identifiers *)
+let identifier_re = /[A-Za-z0-9_.\\-]+/
+
 (* View: user_re
  * Regex for user/netgroup fields
  *)
-let user_re = Rx.word - /[Ee][Xx][Cc][Ee][Pp][Tt]/
+let user_re = identifier_re - /[Ee][Xx][Cc][Ee][Pp][Tt]/
 
 (* View: user
  * user can be a username, username@hostname or a group
@@ -65,7 +69,7 @@ let user      = [ label "user"
  * Format is (GROUP)
  *)
 let group     = [ label "group"
-                  . Util.del_str "(" . store Rx.word . Util.del_str ")" ]
+                  . Util.del_str "(" . store identifier_re . Util.del_str ")" ]
 
 (* View: netgroup
  * Format is @NETGROUP[@@NISDOMAIN]
