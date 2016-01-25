@@ -13,12 +13,15 @@ About: Lens Usage
 module Shellvars =
   autoload xfm
 
+  (* Delete a blank line, rather than mapping it *)
+  let del_empty = del (Util.empty_generic_re . "\n") "\n"
+
   let empty   = Util.empty
   let empty_part_re = Util.empty_generic_re . /\n+/
   let eol = del (/[ \t]+|[ \t]*[;\n]/ . empty_part_re*) "\n"
   let semicol_eol = del (/[ \t]*[;\n]/ . empty_part_re*) "\n"
 
-  let key_re = /[A-Za-z0-9_]+(\[[0-9]+\])?/ - ("unset" | "export")
+  let key_re = /[A-Za-z0-9_]+(\[[0-9A-Za-z_,]+\])?/ - ("unset" | "export")
   let matching_re = "${!" . key_re . /[\*@]\}/
   let eq = Util.del_str "="
 
@@ -140,7 +143,7 @@ module Shellvars =
     let case_entry = [ label "@case_entry"
                        . Util.indent . store /[^ \t\n\)]+/
                        . Util.del_str ")" . eol
-                       . ( entry+ | entry_noeol )?
+                       . entry* . entry_noeol?
                        . Util.indent . Util.del_str ";;" . eol ] in
       [ keyword_label "case" "@case" . Sep.space
         . store (char+ | ("\"" . char+ . "\""))
@@ -186,9 +189,9 @@ module Shellvars =
       | case entry entry_noeol
       | function entry
 
-  let lns_norec = empty* . (comment | entry_eol) *
+  let lns_norec = del_empty* . (comment | entry_eol) *
 
-  let lns = empty* . (comment | entry_eol | rec_entry) *
+  let lns = del_empty* . (comment | entry_eol | rec_entry) *
 
   let sc_incl (n:string) = (incl ("/etc/sysconfig/" . n))
   let sc_excl (n:string) = (excl ("/etc/sysconfig/" . n))
@@ -244,6 +247,7 @@ module Shellvars =
                      . incl "/etc/lintianrc"
                      . incl "/etc/lsb-release"
                      . incl "/etc/os-release"
+                     . incl "/etc/periodic.conf"
                      . incl "/etc/popularity-contest.conf"
                      . incl "/etc/rc.conf"
                      . incl "/etc/rc.conf.local"

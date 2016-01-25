@@ -76,7 +76,7 @@ About: Limitations
 module Exports =
   autoload xfm
 
-  let client_re = /[a-zA-Z0-9.@*?\/:-]+/
+  let client_re = /[][a-zA-Z0-9.@*?\/:-]+/
 
   let eol = Util.eol
   let lbracket  = Util.del_str "("
@@ -93,6 +93,6 @@ module Exports =
   let entry = [ label "dir" . store /\/[^ \t]*/
                 . sep_spc . Build.opt_list client sep_spc . eol ]
 
-  let lns = (Hosts.empty | Hosts.comment | entry)*
+  let lns = (Util.empty | Util.comment | entry)*
 
   let xfm = transform lns (incl "/etc/exports")

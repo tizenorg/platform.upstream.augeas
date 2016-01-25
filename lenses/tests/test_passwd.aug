@@ -43,6 +43,15 @@ test Passwd.lns get "+@some-nis-group::::::\n" =
 test Passwd.lns get "+\n" =
   { "@nisdefault" }
 
+test Passwd.lns get "+::::::\n" =
+  { "@nisdefault"
+      { "password" = "" }
+      { "uid" = "" }
+      { "gid" = "" }
+      { "name" }
+      { "home" }
+      { "shell" } }
+
 test Passwd.lns get "+::::::/sbin/nologin\n" =
   { "@nisdefault"
     { "password" = "" }
@@ -52,8 +61,44 @@ test Passwd.lns get "+::::::/sbin/nologin\n" =
     { "home" }
     { "shell" = "/sbin/nologin" } }
 
+test Passwd.lns get "+:*:0:0:::\n" =
+  { "@nisdefault"
+    { "password" = "*" }
+    { "uid" = "0" }
+    { "gid" = "0" }
+    { "name" }
+    { "home" }
+    { "shell" } }
+
 (* NIS entries with overrides, ticket #339 *)
 test Passwd.lns get "+@bob:::::/home/bob:/bin/bash\n" =
  { "@nis" = "bob"
    { "home" = "/home/bob" }
    { "shell" = "/bin/bash" } }
+
+(* NIS user entries *)
+test Passwd.lns get "+bob::::::\n" =
+ { "@+nisuser" = "bob" }
+
+test Passwd.lns get "+bob::::User Comment:/home/bob:/bin/bash\n" =
+ { "@+nisuser" = "bob"
+   { "name" = "User Comment" }
+   { "home" = "/home/bob" }
+   { "shell" = "/bin/bash" } }
+
+test Passwd.lns put "+bob::::::\n" after
+  set "@+nisuser" "alice"
+= "+alice::::::\n"
+
+test Passwd.lns put "+bob::::::\n" after
+  set "@+nisuser/name" "User Comment";
+  set "@+nisuser/home" "/home/bob";
+  set "@+nisuser/shell" "/bin/bash"
+= "+bob::::User Comment:/home/bob:/bin/bash\n"
+
+test Passwd.lns get "-bob::::::\n" =
+ { "@-nisuser" = "bob" }
+
+test Passwd.lns put "-bob::::::\n" after
+  set "@-nisuser" "alice"
+= "-alice::::::\n"

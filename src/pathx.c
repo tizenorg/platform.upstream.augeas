@@ -123,6 +123,15 @@ static const char *const axis_names[] = {
 
 static const char *const axis_sep = "::";
 
+/* The characters that can follow a name in a location expression (aka path)
+ * The parser will assume that name (path component) is finished when it
+ * encounters any of these characters, unless they are escaped by preceding
+ * them with a '\\'.
+ *
+ * See parse_name for the gory details
+ */
+static const char const name_follow[] = "][|/=()!,";
+
 /* Doubly linked list of location steps. Besides the information from the
  * path expression, also contains information to iterate over a node set,
  * in particular, the context node CTX for the step, and the current node
@@ -1607,17 +1616,43 @@ static void push_new_binary_op(enum binary_op op, struct state *state) {
     push_expr(expr, state);
 }
 
+int pathx_escape_name(const char *in, char **out) {
+    const char *p;
+    int num_to_escape = 0;
+    char *s;
+
+    *out = NULL;
+
+    for (p = in; *p; p++) {
+        if (strchr(name_follow, *p) || isspace(*p) || *p == '\\')
+            num_to_escape += 1;
+    }
+
+    if (num_to_escape == 0)
+        return 0;
+
+    if (ALLOC_N(*out, strlen(in) + num_to_escape + 1) < 0)
+        return -1;
+
+    for (p = in, s = *out; *p; p++) {
+        if (strchr(name_follow, *p) || isspace(*p) || *p == '\\')
+            *s++ = '\\';
+        *s++ = *p;
+    }
+    *s = '\0';
+    return 0;
+}
+
 /*
  * NameNoWS ::= [^][|/\= \t\n] | \\.
  * NameWS   ::= [^][|/\=] | \\.
  * Name ::= NameNoWS NameWS* NameNoWS | NameNoWS
  */
 static char *parse_name(struct state *state) {
-    static const char const follow[] = "][|/=()!,";
     const char *s = state->pos;
     char *result;
 
-    while (*state->pos != '\0' && strchr(follow, *state->pos) == NULL) {
+    while (*state->pos != '\0' && strchr(name_follow, *state->pos) == NULL) {
         /* This is a hack: since we allow spaces in names, we need to avoid
          * gobbling up stuff that is in follow(Name), e.g. 'or' so that
          * things like [name1 or name2] still work.

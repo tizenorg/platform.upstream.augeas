@@ -296,6 +296,86 @@ static void testUmask022(CuTest *tc) {
     testUmask(tc, 0022, 0644);
 }
 
+/* Test that handling of 'strange' characters in path names works as
+ * expected. In particular, that paths with characters that have special
+ * meaning in path expressions are escaped properly.
+ *
+ * This test isn't all that specific to save, but since these tests set up
+ * a copy of tests/root/ that is modifiable, it was convenient to put this
+ * test here.
+ */
+static void testPathEscaping(CuTest *tc) {
+    /* Path expression with characters escaped */
+    static const char *const weird =
+        "/files/etc/sysconfig/network-scripts/ifcfg-weird\\ \\[\\!\\]\\ \\(used\\ to\\ fail\\)";
+    /* Path without any escaping */
+    static const char *const weird_no_escape =
+        "/files/etc/sysconfig/network-scripts/ifcfg-weird [!] (used to fail)";
+
+    char *fname = NULL, *s = NULL;
+    const char *v;
+    int r;
+
+    /* Construct the file name in the file system and check the file is there */
+    r = asprintf(&fname, "%s%s", root, weird_no_escape + strlen("/files"));
+    CuAssertPositive(tc, r);
+
+    r = access(fname, R_OK);
+    CuAssertIntEquals(tc, 0, r);
+
+    /* Make sure weird is in the tree */
+    r = aug_match(aug, weird, NULL);
+    CuAssertIntEquals(tc, 1, r);
+
+    /* Make sure we can get to the metadata about weird */
+    r = asprintf(&s, "/augeas%s/path", weird);
+    CuAssertPositive(tc, r);
+
+    r = aug_get(aug, s, &v);
+    CuAssertIntEquals(tc, 1, r);
+    CuAssertStrEquals(tc, weird_no_escape, v);
+
+    /* Delete it from the tree and save it; make sure it gets removed
+       from the file system */
+    r = aug_rm(aug, weird);
+    CuAssertPositive(tc, r);
+
+    r = aug_save(aug);
+    CuAssertRetSuccess(tc, r);
+
+    r = access(fname, R_OK);
+    CuAssertIntEquals(tc, -1, r);
+    CuAssertIntEquals(tc, ENOENT, errno);
+}
+
+/* Test that we handle failure to save a file because we lack permission on
+ * the target file is handled gracefully.
+ *
+ * As reported in https://github.com/hercules-team/augeas/issues/178, this
+ * used to lead to a SEGV
+ */
+static void testSaveNoPermission(CuTest *tc) {
+    int r;
+    char *path = NULL;
+    const char *v;
+
+    r = asprintf(&path, "%s/etc/hosts", root);
+    CuAssertPositive(tc, r);
+
+    r = aug_set(aug, "/files/etc/hosts/1/alias[1]", "othername");
+    CuAssertRetSuccess(tc, r);
+
+    r = chmod(path, 0);
+    CuAssertRetSuccess(tc, r);
+
+    r = aug_save(aug);
+    CuAssertIntEquals(tc, -1, r);
+
+    r = aug_get(aug, "/augeas/files/etc/hosts/error", &v);
+    CuAssertIntEquals(tc, 1, r);
+    CuAssertStrEquals(tc, "replace_from_missing", v);
+}
+
 int main(void) {
     char *output = NULL;
     CuSuite* suite = CuSuiteNew();
@@ -314,6 +394,7 @@ int main(void) {
 
     CuSuiteSetup(suite, setup, teardown);
 
+    SUITE_ADD_TEST(suite, testSaveNoPermission);
     SUITE_ADD_TEST(suite, testSaveNewFile);
     SUITE_ADD_TEST(suite, testRemoveNoPermission);
     SUITE_ADD_TEST(suite, testNonExistentLens);
@@ -324,6 +405,7 @@ int main(void) {
     SUITE_ADD_TEST(suite, testUmask077);
     SUITE_ADD_TEST(suite, testUmask027);
     SUITE_ADD_TEST(suite, testUmask022);
+    SUITE_ADD_TEST(suite, testPathEscaping);
 
     CuSuiteRun(suite);
     CuSuiteSummary(suite, &output);
