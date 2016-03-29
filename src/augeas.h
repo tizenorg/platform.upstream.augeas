@@ -85,7 +85,7 @@ extern "C" {
  * and, if an error is reported, only use the handle with the aug_error
  * functions and aug_close.
  */
-augeas *aug_init(const char *root, const char *loadpath, unsigned int flags);
+__attribute__ ((visibility ("default"))) augeas *aug_init(const char *root, const char *loadpath, unsigned int flags);
 
 /* Function: aug_defvar
  *
@@ -102,7 +102,7 @@ augeas *aug_init(const char *root, const char *loadpath, unsigned int flags);
  * other than a nodeset, and the number of nodes if EXPR evaluates to a
  * nodeset
  */
-int aug_defvar(augeas *aug, const char *name, const char *expr);
+__attribute__ ((visibility ("default"))) int aug_defvar(augeas *aug, const char *name, const char *expr);
 
 /* Function: aug_defnode
  *
@@ -121,7 +121,7 @@ int aug_defvar(augeas *aug, const char *name, const char *expr);
  * Returns -1 on error; on success, returns the number of nodes in the
  * nodeset
  */
-int aug_defnode(augeas *aug, const char *name, const char *expr,
+__attribute__ ((visibility ("default"))) int aug_defnode(augeas *aug, const char *name, const char *expr,
                 const char *value, int *created);
 
 /* Function: aug_get
@@ -141,7 +141,7 @@ int aug_defnode(augeas *aug, const char *name, const char *expr,
  * and a negative value if there is more than one node matching PATH, or if
  * PATH is not a legal path expression.
  */
-int aug_get(const augeas *aug, const char *path, const char **value);
+__attribute__ ((visibility ("default"))) int aug_get(const augeas *aug, const char *path, const char **value);
 
 /* Function: aug_label
  *
@@ -158,7 +158,7 @@ int aug_get(const augeas *aug, const char *path, const char **value);
  * and a negative value if there is more than one node matching PATH, or if
  * PATH is not a legal path expression.
  */
-int aug_label(const augeas *aug, const char *path, const char **label);
+__attribute__ ((visibility ("default"))) int aug_label(const augeas *aug, const char *path, const char **label);
 
 /* Function: aug_set
  *
@@ -170,7 +170,7 @@ int aug_label(const augeas *aug, const char *path, const char **label);
  * 0 on success, -1 on error. It is an error if more than one node
  * matches PATH.
  */
-int aug_set(augeas *aug, const char *path, const char *value);
+__attribute__ ((visibility ("default"))) int aug_set(augeas *aug, const char *path, const char *value);
 
 /* Function: aug_setm
  *
@@ -182,7 +182,7 @@ int aug_set(augeas *aug, const char *path, const char *value);
  * Returns:
  * number of modified nodes on success, -1 on error
  */
-int aug_setm(augeas *aug, const char *base, const char *sub, const char *value);
+__attribute__ ((visibility ("default"))) int aug_setm(augeas *aug, const char *base, const char *sub, const char *value);
 
 /* Function: aug_span
  *
@@ -200,7 +200,7 @@ int aug_setm(augeas *aug, const char *base, const char *sub, const char *value);
  * -1 on error
  */
 
-int aug_span(augeas *aug, const char *path, char **filename,
+__attribute__ ((visibility ("default"))) int aug_span(augeas *aug, const char *path, char **filename,
         unsigned int *label_start, unsigned int *label_end,
         unsigned int *value_start, unsigned int *value_end,
         unsigned int *span_start, unsigned int *span_end);
@@ -217,14 +217,14 @@ int aug_span(augeas *aug, const char *path, char **filename,
  * Returns:
  * 0 on success, and -1 if the insertion fails.
  */
-int aug_insert(augeas *aug, const char *path, const char *label, int before);
+__attribute__ ((visibility ("default"))) int aug_insert(augeas *aug, const char *path, const char *label, int before);
 
 /* Function: aug_rm
  *
  * Remove path and all its children. Returns the number of entries removed.
  * All nodes that match PATH, and their descendants, are removed.
  */
-int aug_rm(augeas *aug, const char *path);
+__attribute__ ((visibility ("default"))) int aug_rm(augeas *aug, const char *path);
 
 /* Function: aug_mv
  *
@@ -241,7 +241,7 @@ int aug_rm(augeas *aug, const char *path);
  * Returns:
  * 0 on success and -1 on failure.
  */
-int aug_mv(augeas *aug, const char *src, const char *dst);
+__attribute__ ((visibility ("default"))) int aug_mv(augeas *aug, const char *src, const char *dst);
 
 /* Function: aug_cp
  *
@@ -254,7 +254,7 @@ int aug_mv(augeas *aug, const char *src, const char *dst);
  * Returns:
  * 0 on success and -1 on failure.
  */
-int aug_cp(augeas *aug, const char *src, const char *dst);
+__attribute__ ((visibility ("default"))) int aug_cp(augeas *aug, const char *src, const char *dst);
 
 /* Function: aug_rename
  *
@@ -263,7 +263,7 @@ int aug_cp(augeas *aug, const char *src, const char *dst);
  * Returns:
  * The number of nodes renamed on success and -1 on failure.
  */
-int aug_rename(augeas *aug, const char *src, const char *lbl);
+__attribute__ ((visibility ("default"))) int aug_rename(augeas *aug, const char *src, const char *lbl);
 
 /* Function: aug_match
  *
@@ -293,7 +293,7 @@ int aug_rename(augeas *aug, const char *src, const char *lbl);
  * matches more than one path segment.
  *
  */
-int aug_match(const augeas *aug, const char *path, char ***matches);
+__attribute__ ((visibility ("default"))) int aug_match(const augeas *aug, const char *path, char ***matches);
 
 /* Function: aug_save
  *
@@ -312,7 +312,7 @@ int aug_match(const augeas *aug, const char *path, char ***matches);
  *
  * If neither of these flags is set, overwrite the original file.
  */
-int aug_save(augeas *aug);
+__attribute__ ((visibility ("default"))) int aug_save(augeas *aug);
 
 /* Function: aug_load
  *
@@ -343,7 +343,7 @@ int aug_save(augeas *aug);
  * where some files could not be loaded. Details of such files can be found
  * as '/augeas//error'.
  */
-int aug_load(augeas *aug);
+__attribute__ ((visibility ("default"))) int aug_load(augeas *aug);
 
 /* Function: aug_text_store
  *
@@ -354,7 +354,7 @@ int aug_load(augeas *aug);
  * Returns:
  * 0 on success, or a negative value on failure
  */
-int aug_text_store(augeas *aug, const char *lens, const char *node,
+__attribute__ ((visibility ("default"))) int aug_text_store(augeas *aug, const char *lens, const char *node,
                    const char *path);
 
 /* Function: aug_text_retrieve
@@ -366,7 +366,7 @@ int aug_text_store(augeas *aug, const char *lens, const char *node,
  * Returns:
  * 0 on success, or a negative value on failure
  */
-int aug_text_retrieve(struct augeas *aug, const char *lens,
+__attribute__ ((visibility ("default"))) int aug_text_retrieve(struct augeas *aug, const char *lens,
                       const char *node_in, const char *path,
                       const char *node_out);
 
@@ -377,7 +377,7 @@ int aug_text_retrieve(struct augeas *aug, const char *lens,
  * Returns:
  * 0 on success, or a negative value on failure
  */
-int aug_print(const augeas *aug, FILE *out, const char *path);
+__attribute__ ((visibility ("default"))) int aug_print(const augeas *aug, FILE *out, const char *path);
 
 /* Function: aug_to_xml
  *
@@ -389,7 +389,7 @@ int aug_print(const augeas *aug, FILE *out, const char *path);
  *
  * In case of failure, *xmldoc is set to NULL
  */
-int aug_to_xml(const augeas *aug, const char *path, xmlNode **xmldoc,
+__attribute__ ((visibility ("default"))) int aug_to_xml(const augeas *aug, const char *path, xmlNode **xmldoc,
                unsigned int flags);
 
 /*
@@ -404,7 +404,7 @@ int aug_to_xml(const augeas *aug, const char *path, xmlNode **xmldoc,
  * Returns:
  * 1 on success, -1 on failure
  */
-int aug_transform(augeas *aug, const char *lens, const char *file, int excl);
+__attribute__ ((visibility ("default"))) int aug_transform(augeas *aug, const char *lens, const char *file, int excl);
 
 /*
  * Function: aug_srun
@@ -418,7 +418,7 @@ int aug_transform(augeas *aug, const char *lens, const char *file, int excl);
  * the number of executed commands on success, -1 on failure, and -2 if a
  * 'quit' command was encountered
  */
-int aug_srun(augeas *aug, FILE *out, const char *text);
+__attribute__ ((visibility ("default"))) int aug_srun(augeas *aug, FILE *out, const char *text);
 
 /* Function: aug_close
  *
@@ -426,7 +426,7 @@ int aug_srun(augeas *aug, FILE *out, const char *text);
  * it. After running AUG_CLOSE, AUG is invalid and can not be used for any
  * more operations.
  */
-void aug_close(augeas *aug);
+__attribute__ ((visibility ("default"))) void aug_close(augeas *aug);
 
 /*
  * Error reporting
@@ -451,21 +451,21 @@ typedef enum {
 } aug_errcode_t;
 
 /* Return the error code from the last API call */
-int aug_error(augeas *aug);
+__attribute__ ((visibility ("default"))) int aug_error(augeas *aug);
 
 /* Return a human-readable message for the error code */
-const char *aug_error_message(augeas *aug);
+__attribute__ ((visibility ("default"))) const char *aug_error_message(augeas *aug);
 
 /* Return a human-readable message elaborating the error code; might be
  * NULL. For example, when the error code is AUG_EPATHX, this will explain
  * how the path expression is invalid */
-const char *aug_error_minor_message(augeas *aug);
+__attribute__ ((visibility ("default"))) const char *aug_error_minor_message(augeas *aug);
 
 /* Return details about the error, which might be NULL. For example, for
  * AUG_EPATHX, indicates where in the path expression the error
  * occurred. The returned value can only be used until the next API call
  */
-const char *aug_error_details(augeas *aug);
+__attribute__ ((visibility ("default"))) const char *aug_error_details(augeas *aug);
 
 
 #ifdef __cplusplus

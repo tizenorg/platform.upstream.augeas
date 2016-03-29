@@ -81,7 +81,8 @@ modifying the official lenses, or when creating new ones.
 cp %{SOURCE1001} .
 
 %build
-export CFLAGS="-Wno-error $RPM_OPT_FLAGS"
+export CFLAGS="-Wno-error $RPM_OPT_FLAGS -fvisibility=hidden"
+export CXXFLAGS+=" -fvisibility=hidden"
 %configure --disable-static
 make %{?_smp_mflags}
 
