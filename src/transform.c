@@ -61,6 +61,8 @@ static const int glob_flags = GLOB_NOSORT;
  */
 static const char *const s_path = "path";
 static const char *const s_lens = "lens";
+static const char *const s_last = "last_matched";
+static const char *const s_next = "next_not_matched";
 static const char *const s_info = "info";
 static const char *const s_mtime = "mtime";
 
@@ -328,9 +330,9 @@ static char *err_path(const char *filename) {
 }
 
 ATTRIBUTE_FORMAT(printf, 4, 5)
-static void err_set(struct augeas *aug,
-                    struct tree *err_info, const char *sub,
-                    const char *format, ...) {
+static struct tree *err_set(struct augeas *aug,
+                            struct tree *err_info, const char *sub,
+                            const char *format, ...) {
     int r;
     va_list ap;
     char *value = NULL;
@@ -351,6 +353,22 @@ static void err_set(struct augeas *aug,
 
  error:
     free(value);
+    return tree;
+}
+
+static struct tree *err_lens_entry(struct augeas *aug, struct tree *where,
+                           struct lens *lens, const char *label) {
+    struct tree *result = NULL;
+
+    if (lens == NULL)
+        return NULL;
+
+    char *fi = format_info(lens->info);
+    if (fi != NULL) {
+        result = err_set(aug, where, label, "%s", fi);
+        free(fi);
+    }
+    return result;
 }
 
 /* Record an error in the tree. The error will show up underneath
@@ -400,12 +418,10 @@ static int store_error(struct augeas *aug,
             if (err->path != NULL) {
                 err_set(aug, err_info, s_path, "%s%s", path, err->path);
             }
-            if (err->lens != NULL) {
-                char *fi = format_info(err->lens->info);
-                if (fi != NULL) {
-                    err_set(aug, err_info, s_lens, "%s", fi);
-                    free(fi);
-                }
+            struct tree *t = err_lens_entry(aug, err_info, err->lens, s_lens);
+            if (t != NULL) {
+                err_lens_entry(aug, t, err->last, s_last);
+                err_lens_entry(aug, t, err->next, s_next);
             }
             err_set(aug, err_info, s_message, "%s", err->message);
         } else if (errnum != 0) {
@@ -847,8 +863,15 @@ static int transfer_file_attrs(FILE *from, FILE *to,
     int selinux_enabled = (is_selinux_enabled() > 0);
     security_context_t con = NULL;
 
-    int from_fd = fileno(from);
+    int from_fd;
     int to_fd = fileno(to);
+
+    if (from == NULL) {
+        *err_status = "replace_from_missing";
+        return -1;
+    }
+
+    from_fd = fileno(from);
 
     ret = fstat(from_fd, &st);
     if (ret < 0) {
@@ -1135,7 +1158,6 @@ int transform_save(struct augeas *aug, struct tree *xfm,
 
     if (augorig_exists) {
         if (transfer_file_attrs(augorig_canon_fp, fp, &err_status) != 0) {
-            err_status = "xfer_attrs";
             goto done;
         }
     } else {
@@ -1330,21 +1352,34 @@ int text_retrieve(struct augeas *aug, const char *lens_name,
 }
 
 int remove_file(struct augeas *aug, struct tree *tree) {
-    char *path = NULL;
-    const char *filename = NULL;
     const char *err_status = NULL;
     char *dyn_err_status = NULL;
     char *augsave = NULL, *augorig = NULL, *augorig_canon = NULL;
+    struct tree *path = NULL;
+    const char *file_path = NULL;
+    char *meta_path = NULL;
     int r;
 
-    path = path_of_tree(tree);
+    path = tree_child(tree, s_path);
     if (path == NULL) {
+        err_status = "no child called 'path' for file entry";
+        goto error;
+    }
+    file_path = path->value + strlen(AUGEAS_FILES_TREE);
+    path = NULL;
+
+    if (file_path == NULL) {
+        err_status = "no path for file";
+        goto error;
+    }
+
+    meta_path = path_of_tree(tree);
+    if (meta_path == NULL) {
         err_status = "path_of_tree";
         goto error;
     }
-    filename = path + strlen(AUGEAS_META_FILES);
 
-    if ((augorig = strappend(aug->root, filename + 1)) == NULL) {
+    if ((augorig = strappend(aug->root, file_path)) == NULL) {
         err_status = "root_file";
         goto error;
     }
@@ -1359,7 +1394,7 @@ int remove_file(struct augeas *aug, struct tree *tree) {
         }
     }
 
-    r = file_saved_event(aug, path + strlen(AUGEAS_META_TREE));
+    r = file_saved_event(aug, meta_path + strlen(AUGEAS_META_TREE));
     if (r < 0) {
         err_status = "saved_event";
         goto error;
@@ -1389,9 +1424,10 @@ int remove_file(struct augeas *aug, struct tree *tree) {
             goto error;
         }
     }
+    path = NULL;
     tree_unlink(aug, tree);
  done:
-    free(path);
+    free(meta_path);
     free(augorig);
     free(augorig_canon);
     free(augsave);
@@ -1400,9 +1436,9 @@ int remove_file(struct augeas *aug, struct tree *tree) {
     {
         const char *emsg =
             dyn_err_status == NULL ? err_status : dyn_err_status;
-        store_error(aug, filename, path, emsg, errno, NULL, NULL);
+        store_error(aug, file_path, meta_path, emsg, errno, NULL, NULL);
     }
-    free(path);
+    free(meta_path);
     free(augorig);
     free(augorig_canon);
     free(augsave);

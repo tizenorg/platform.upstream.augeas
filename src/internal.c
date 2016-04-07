@@ -336,6 +336,8 @@ char *path_expand(struct tree *tree, const char *ppath) {
 
     char *path;
     const char *label;
+    char *escaped = NULL;
+
     int cnt = 0, ind = 0, r;
 
     list_for_each(t, siblings) {
@@ -356,11 +358,21 @@ char *path_expand(struct tree *tree, const char *ppath) {
     else
         label = tree->label;
 
+    r = pathx_escape_name(label, &escaped);
+    if (r < 0)
+        return NULL;
+
+    if (escaped != NULL)
+        label = escaped;
+
     if (cnt > 1) {
         r = asprintf(&path, "%s/%s[%d]", ppath, label, ind);
     } else {
         r = asprintf(&path, "%s/%s", ppath, label);
     }
+
+    free(escaped);
+
     if (r == -1)
         return NULL;
     return path;

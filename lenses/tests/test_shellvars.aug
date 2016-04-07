@@ -406,7 +406,6 @@ esac\n" =
 
   (* Empty comment before entries *)
   test Shellvars.lns get "# \nfoo=bar\n" =
-  { }
   { "foo" = "bar" }
 
   (* Empty comment after entries *)
@@ -470,6 +469,25 @@ esac\n" =
       { "@case_entry" = "1"
         { "TestVar" = "\"test1\"" } } }
 
+  (* case: support ;; on the same line with multiple commands *)
+  test lns get "case $ARG in
+        0) Foo=0; Bar=1;;
+        1)
+	   Foo=2
+	   Bar=3; Baz=4;;
+esac\n" =
+    { "@case" = "$ARG"
+      { "@case_entry" = "0"
+        { "Foo" = "0" }
+        { "Bar" = "1" }
+      }
+      { "@case_entry" = "1"
+        { "Foo" = "2" }
+        { "Bar" = "3" }
+        { "Baz" = "4" }
+      }
+    }
+
 (* Test: Shellvars.lns
      Support `##` bashism in conditions (GH issue #118) *)
 test Shellvars.lns get "if [ \"${APACHE_CONFDIR##/etc/apache2-}\" != \"${APACHE_CONFDIR}\" ] ; then
@@ -488,6 +506,35 @@ fi\n" =
   test lns get "export MALLOC_PERTURB_=$(($RANDOM % 255 + 1))\n" =
     { "MALLOC_PERTURB_" = "$(($RANDOM % 255 + 1))"
       { "export" } }
+
+  (*
+   * Github issue 202
+   *)
+  let starts_with_blank = "\n  \nVAR=value\n"
+
+  test lns get starts_with_blank = { "VAR" = "value" }
+
+  (* It is now possible to insert at the beginning of a file
+   * that starts with blank lines *)
+  test lns put starts_with_blank after
+    insb "#comment" "/*[1]";
+    set "/#comment[1]" "a comment" =
+    " # a comment\nVAR=value\n"
+
+  (* Modifications of the file lose the blank lines though *)
+  test lns put starts_with_blank after
+    set "/VAR2" "abc" = "VAR=value\nVAR2=abc\n"
+
+  test lns put starts_with_blank after
+    rm "/VAR";
+    set "/VAR2" "abc" = "VAR2=abc\n"
+
+  test lns put starts_with_blank after
+    rm "/VAR"         = ""
+
+  (* Support associative arrays *)
+  test lns get "var[alpha_beta,gamma]=something\n" =
+    { "var[alpha_beta,gamma]" = "something" }
 
 (* Local Variables: *)
 (* mode: caml       *)

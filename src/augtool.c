@@ -32,6 +32,7 @@
 #include <limits.h>
 #include <ctype.h>
 #include <locale.h>
+#include <signal.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <pwd.h>
@@ -136,8 +137,10 @@ static char *readline_path_generator(const char *text, int state) {
         if (STREQLEN(chend, end, strlen(end))) {
             if (child_count(child) > 0) {
                 char *c = realloc(child, strlen(child)+2);
-                if (c == NULL)
+                if (c == NULL) {
+                    free(child);
                     return NULL;
+                }
                 child = c;
                 strcat(child, "/");
             }
@@ -145,8 +148,10 @@ static char *readline_path_generator(const char *text, int state) {
             /* strip off context if the user didn't give it */
             if (ctx != NULL) {
                 char *c = realloc(child, strlen(child)-strlen(ctx)+1);
-                if (c == NULL)
+                if (c == NULL) {
+                    free(child);
                     return NULL;
+                }
                 int ctxidx = strlen(ctx);
                 if (child[ctxidx] == SEP)
                     ctxidx++;
@@ -171,7 +176,7 @@ static char *readline_command_generator(const char *text, int state) {
         "get", "label", "ins", "load", "ls", "match",
         "mv", "cp", "rename", "print", "dump-xml", "rm", "save", "set", "setm",
         "clearm", "span", "store", "retrieve", "transform",
-        "help", "touch", "insert", "move", "copy", NULL };
+        "help", "touch", "insert", "move", "copy", "errors", NULL };
 
     static int current = 0;
     const char *name;
@@ -426,6 +431,25 @@ static void print_aug_error(void) {
     }
 }
 
+static void sigint_handler(ATTRIBUTE_UNUSED int signum) {
+    // Cancel the current line of input, along with undo info for that line.
+    rl_replace_line("", 1);
+
+    // Move the cursor to the next screen line, then force a re-display.
+    rl_crlf();
+    rl_forced_update_display();
+}
+
+static void install_signal_handlers(void) {
+    // On Ctrl-C, cancel the current line (rather than exit the program).
+    struct sigaction sigint_action;
+    MEMZERO(&sigint_action, 1);
+    sigint_action.sa_handler = sigint_handler;
+    sigemptyset(&sigint_action.sa_mask);
+    sigint_action.sa_flags = 0;
+    sigaction(SIGINT, &sigint_action, NULL);
+}
+
 static int main_loop(void) {
     char *line = NULL;
     int ret = 0;
@@ -445,6 +469,8 @@ static int main_loop(void) {
             return -1;
         }
     }
+
+    install_signal_handlers();
 
     // make readline silent by default
     echo_commands = echo_commands || isatty(fileno(stdin));
@@ -468,10 +494,11 @@ static int main_loop(void) {
                 echo_commands = true;
 
                 // reopen in stream
-                if ((rl_instream = fopen("/dev/tty", "r")) == NULL) {
+                if (freopen("/dev/tty", "r", stdin) == NULL) {
                     perror("Failed to open terminal for reading");
                     return -1;
                 }
+                rl_instream = stdin;
 
                 // reopen stdout and stream to a tty if originally silenced or
                 // not connected to a tty, for full interactive mode

@@ -1,5 +1,11 @@
 module Test_httpd =
 
+(* Check that we can iterate on directive *)
+let _ = Httpd.directive+
+
+(* Check that we can do a non iterative section *)
+let _ = Httpd.section Httpd.directive
+
 (* directives testing *)
 let d1 = "ServerRoot \"/etc/apache2\"\n"
 test Httpd.directive get d1 =
@@ -403,4 +409,60 @@ test Httpd.lns get versioncheck =
         { "arg" = "modules/mod_proxy_ajp.so" }
       }
     }
+  }
+
+
+(* GH #220 *)
+let double_comment = "<IfDefine Foo>
+##
+## Comment
+##
+</IfDefine>\n"
+
+test Httpd.lns get double_comment =
+  { "IfDefine"
+    { "arg" = "Foo" }
+    { "#comment" = "#" }
+    { "#comment" = "# Comment" }
+    { "#comment" = "#" }
+  }
+
+let single_comment = "<IfDefine Foo>
+#
+## Comment
+##
+</IfDefine>\n"
+
+test Httpd.lns get single_comment =
+  { "IfDefine"
+    { "arg" = "Foo" }
+    { "#comment" = "# Comment" }
+    { "#comment" = "#" }
+  }
+
+let single_empty = "<IfDefine Foo>
+#
+
+</IfDefine>\n"
+test Httpd.lns get single_empty =
+  { "IfDefine"
+    { "arg" = "Foo" }
+  }
+
+let eol_empty = "<IfDefine Foo> #
+</IfDefine>\n"
+test Httpd.lns get eol_empty =
+  { "IfDefine"
+    { "arg" = "Foo" }
+  }
+
+(* Issue #140 *)
+test Httpd.lns get "<IfModule mod_ssl.c>
+    # one comment
+    # another comment
+</IfModule>\n" =
+  { "IfModule"
+    { "arg" = "mod_ssl.c" }
+    { "#comment" = "one comment" }
+    { "#comment" = "another comment" }
   }

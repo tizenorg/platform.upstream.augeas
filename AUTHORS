@@ -24,7 +24,9 @@ Contributions by:
   Oliver Beattie              <oliver@obeattie com>
   Tim Bishop                  <tim@bishnet.net>
   Anders F Björklund          <afb@users.sourceforge.net>
+  Jurjen Bokma                <j.bokma@rug.nl>
   Aurelien Bompard            <aurelien@bompard.org>
+  Joey Boggs                  <jboggs@redhat.com>
   Lorenzo Dalrio              <lorenzo.dalrio@gmail.com>
   Francois Deppierraz         <francois.deppierraz@camptocamp.com>
   Luc Didry                   <luc@didry.org>
@@ -44,6 +46,7 @@ Contributions by:
   Simon Josi                  <josi@puzzle.ch>
   Bryan Kearney               <bkearney@redhat.com>
   Jason Kincl                 <jkincl@gmail.com>
+  Andrew Colin Kissa          <andrew@topdog.za.net>
   Francois Lebel              <francoislebel@gmail.com>
   Frédéric Lespez             <frederic.lespez@free.fr>
   Jasper Lievisse Adriaanse   <jasper@humppa.nl>
@@ -53,6 +56,7 @@ Contributions by:
   Jeroen van Meeuwen          <vanmeeuwen@kolabsys.com>
   Jim Meyering                <meyering@redhat.com>
   Sean Millichamp             <sean@bruenor.org>
+  Michael Moll                <kvedulv@kvedulv.de>
   Tim Mooney                  <Tim.Mooney@ndsu.edu>
   Joel Nimety                 <jnimety@perimeterusa.com>
   Matthaus Owens              <matthaus@puppetlabs.com>
@@ -74,6 +78,7 @@ Contributions by:
   Nicolas Valcárcel Scerpella <nvalcarcel@ubuntu.com>
   Gonzalo Servat              <gservat@gmail.com>
   Nahum Shalman               <nshalman elys com>
+  Borislav Stoichkov          <borislav.stoichkov@gmail.com>
   Tim Stoop                   <tim.stoop@gmail.com>
   Laine Stump                 <laine@laine.org>
   Jiri Suchomel               <jsuchome@suse.cz>
@@ -117,3 +122,4 @@ Contributions by:
   Joel Loudermilk             <joel@loudermilk.org>
   Frank Grötzner              <frank@unforgotten.de>
   Pino Toscano                <ptoscano@redhat.com>
+  Geoffrey Gardella           <gardella@gmail.com>
